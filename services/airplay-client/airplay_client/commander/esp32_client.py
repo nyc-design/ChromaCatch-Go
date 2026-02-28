@@ -100,6 +100,13 @@ class ESP32Client:
                 except Exception as ex:
                     last_error = ex
                     await asyncio.sleep(0.15)
+            # Final fallback: shell out to curl (separate process/network stack).
+            try:
+                result = await self._curl_command(payload)
+                logger.debug("ESP32 response (curl fallback): %s", result)
+                return result
+            except Exception as ex:
+                last_error = ex
             logger.error("Cannot connect to ESP32 at %s", self._base_url)
             if last_error:
                 raise last_error
@@ -140,3 +147,29 @@ class ESP32Client:
 
     async def close(self) -> None:
         await self._client.aclose()
+
+    async def _curl_command(self, payload: dict) -> dict:
+        """Fallback command sender via curl subprocess."""
+        cmd = [
+            "curl",
+            "-sS",
+            "--max-time",
+            str(max(1, int(self.timeout))),
+            "-H",
+            "Content-Type: application/json",
+            "-X",
+            "POST",
+            "-d",
+            json.dumps(payload),
+            f"{self._base_url}/command",
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(stderr.decode("utf-8", errors="replace").strip())
+        body = stdout.decode("utf-8", errors="replace").strip()
+        return json.loads(body) if body else {}
