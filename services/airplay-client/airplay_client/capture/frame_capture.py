@@ -10,6 +10,7 @@ import subprocess
 import threading
 import time
 from enum import Enum
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -118,7 +119,6 @@ class FrameCapture:
         fallback_set_at: float | None = None
         first_frame_seen_at: float | None = None
         deadline = time.time() + 120
-        first_frame = os.path.join(frame_dir, "frame_00000.raw")
         logger.info("GStreamer pid=%d, waiting for first decoded frame...", proc.pid)
 
         while time.time() < deadline and self._running:
@@ -158,16 +158,18 @@ class FrameCapture:
                             height,
                         )
 
-            if os.path.exists(first_frame):
+            latest_frame = self._pick_next_frame_path(frame_dir=frame_dir, frame_idx=None)
+            if latest_frame is not None:
+                frame_path, _ = latest_frame
                 if first_frame_seen_at is None:
                     first_frame_seen_at = time.time()
 
-                time.sleep(0.1)  # Let the file finish writing
+                time.sleep(0.05)  # Let the file finish writing
                 if (width == 0 or height == 0) and (
                     first_frame_seen_at is not None
                     and time.time() - first_frame_seen_at >= 1.0
                 ):
-                    frame_bytes = self._get_stable_file_size(first_frame, timeout=0.8)
+                    frame_bytes = self._get_stable_file_size(frame_path, timeout=0.8)
                     if frame_bytes > 0:
                         inferred = self._infer_resolution_from_frame_size(frame_bytes)
                         if inferred:
@@ -214,6 +216,41 @@ class FrameCapture:
 
         logger.info("Using stream resolution: %dx%d", width, height)
         return frame_dir, width, height
+
+    @staticmethod
+    def _list_frame_files(frame_dir: str) -> list[tuple[int, str]]:
+        """List available raw frame files sorted by frame index."""
+        result: list[tuple[int, str]] = []
+        for path in Path(frame_dir).glob("frame_*.raw"):
+            try:
+                idx = int(path.stem.split("_")[1])
+            except (IndexError, ValueError):
+                continue
+            result.append((idx, str(path)))
+        result.sort(key=lambda item: item[0])
+        return result
+
+    def _pick_next_frame_path(
+        self,
+        frame_dir: str,
+        frame_idx: int | None,
+    ) -> tuple[str, int] | None:
+        """Pick the next available frame path, handling multifilesink rollovers."""
+        files = self._list_frame_files(frame_dir)
+        if not files:
+            return None
+
+        if frame_idx is None:
+            idx, path = files[0]
+            return path, idx
+
+        for idx, path in files:
+            if idx >= frame_idx:
+                return path, idx
+
+        # If all available files are older than requested index, jump to latest.
+        idx, path = files[-1]
+        return path, idx
 
     @staticmethod
     def _extract_resolution_from_caps_line(line: str) -> tuple[int, int] | None:
@@ -355,7 +392,7 @@ class FrameCapture:
                 time.sleep(3)
 
         frame_size = width * height * 3
-        frame_idx = 0
+        frame_idx: int | None = None
 
         while self._running:
             # Check if GStreamer process died
@@ -363,21 +400,11 @@ class FrameCapture:
                 logger.warning("GStreamer process exited (rc=%d)", self._gst_proc.returncode)
                 break
 
-            frame_path = os.path.join(frame_dir, f"frame_{frame_idx:05d}.raw")
-
-            if not os.path.exists(frame_path):
-                # Maybe we fell behind and max-files cleaned up — skip ahead
-                skipped = False
-                for skip in range(1, 20):
-                    alt = os.path.join(frame_dir, f"frame_{frame_idx + skip:05d}.raw")
-                    if os.path.exists(alt):
-                        frame_idx += skip
-                        frame_path = alt
-                        skipped = True
-                        break
-                if not skipped:
-                    time.sleep(0.01)
-                    continue
+            next_frame = self._pick_next_frame_path(frame_dir=frame_dir, frame_idx=frame_idx)
+            if next_frame is None:
+                time.sleep(0.01)
+                continue
+            frame_path, frame_idx = next_frame
 
             # Wait for file to be fully written
             try:
@@ -403,7 +430,7 @@ class FrameCapture:
             except OSError:
                 pass
 
-            frame_idx += 1
+            frame_idx = frame_idx + 1
 
         logger.info("GStreamer CLI capture loop stopped")
 
