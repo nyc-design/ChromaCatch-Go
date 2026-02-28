@@ -89,6 +89,7 @@ class FrameCapture:
         else:
             sdp_path = self._build_sdp_file()
             logger.info("Using FFmpeg with SDP file: %s (port %d)", sdp_path, self.udp_port)
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "protocol_whitelist;file,crypto,data,rtp,udp"
             cap = cv2.VideoCapture(sdp_path, cv2.CAP_FFMPEG)
 
         if not cap.isOpened():
