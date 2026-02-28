@@ -3,6 +3,7 @@
 import logging
 import shutil
 import subprocess
+import threading
 import time
 
 from airplay_client.config import client_settings as settings
@@ -22,6 +23,7 @@ class AirPlayManager:
         self.udp_port = udp_port or settings.airplay_udp_port
         self.airplay_name = airplay_name or settings.airplay_name
         self._process: subprocess.Popen | None = None
+        self._drain_threads: list[threading.Thread] = []
 
 
     @property
@@ -67,9 +69,28 @@ class AirPlayManager:
             stderr = self._process.stderr.read().decode() if self._process.stderr else ""
             raise RuntimeError(f"UxPlay failed to start: {stderr}")
 
+        # Drain stdout/stderr in background threads to prevent pipe buffer
+        # from filling up and blocking UxPlay
+        for stream, name in [(self._process.stdout, "stdout"), (self._process.stderr, "stderr")]:
+            t = threading.Thread(target=self._drain_stream, args=(stream, name), daemon=True)
+            t.start()
+            self._drain_threads.append(t)
+
         logger.info("UxPlay started (pid=%d), forwarding to UDP port %d",
                      self._process.pid, self.udp_port)
 
+
+    @staticmethod
+    def _drain_stream(stream, name: str) -> None:
+        """Read and discard a stream to prevent pipe buffer blocking."""
+        try:
+            while True:
+                data = stream.read(4096)
+                if not data:
+                    break
+        except Exception:
+            pass
+        logger.debug("UxPlay %s drain finished", name)
 
     def stop(self) -> None:
         """Stop the UxPlay process."""
@@ -87,6 +108,7 @@ class AirPlayManager:
             self._process.wait(timeout=2)
 
         self._process = None
+        self._drain_threads.clear()
         logger.info("UxPlay stopped")
 
     @property
