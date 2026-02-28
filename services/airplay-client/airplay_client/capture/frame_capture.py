@@ -126,38 +126,37 @@ class FrameCapture:
                 shutil.rmtree(frame_dir, ignore_errors=True)
                 raise RuntimeError(f"GStreamer exited early (rc={proc.returncode})")
 
-            if width == 0 or height == 0:
-                try:
-                    ready, _, _ = select.select([proc.stdout, proc.stderr], [], [], 0.2)
-                except (ValueError, OSError):
-                    ready = []
+            try:
+                ready, _, _ = select.select([proc.stdout, proc.stderr], [], [], 0.2)
+            except (ValueError, OSError):
+                ready = []
 
-                for stream in ready:
-                    line = stream.readline()
-                    text = line.decode("utf-8", errors="replace").rstrip() if line else ""
-                    if text:
-                        logger.debug("[gst] %s", text)
-                        caps_resolution = self._extract_resolution_from_caps_line(text)
-                        if caps_resolution:
-                            caps_w, caps_h = caps_resolution
-                            if (
-                                resolution_source == "fallback"
-                                and (caps_w != width or caps_h != height)
-                            ):
-                                logger.info(
-                                    "Caps resolution (%dx%d) overrides fallback (%dx%d)",
-                                    caps_w,
-                                    caps_h,
-                                    width,
-                                    height,
-                                )
-                            width, height = caps_w, caps_h
-                            resolution_source = "caps"
+            for stream in ready:
+                line = stream.readline()
+                text = line.decode("utf-8", errors="replace").rstrip() if line else ""
+                if text:
+                    logger.debug("[gst] %s", text)
+                    caps_resolution = self._extract_resolution_from_caps_line(text)
+                    if caps_resolution:
+                        caps_w, caps_h = caps_resolution
+                        if (
+                            resolution_source == "fallback"
+                            and (caps_w != width or caps_h != height)
+                        ):
                             logger.info(
-                                "Detected stream resolution from caps: %dx%d",
+                                "Caps resolution (%dx%d) overrides fallback (%dx%d)",
+                                caps_w,
+                                caps_h,
                                 width,
                                 height,
                             )
+                        width, height = caps_w, caps_h
+                        resolution_source = "caps"
+                        logger.info(
+                            "Detected stream resolution from caps: %dx%d",
+                            width,
+                            height,
+                        )
 
             if os.path.exists(first_frame):
                 if first_frame_seen_at is None:
