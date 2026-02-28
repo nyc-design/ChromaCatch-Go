@@ -98,6 +98,8 @@ class FrameCapture:
             "ffmpeg",
             "-loglevel", "info",
             "-protocol_whitelist", "file,crypto,data,rtp,udp",
+            "-analyzeduration", "10000000",
+            "-probesize", "10000000",
             "-fflags", "nobuffer",
             "-flags", "low_delay",
             "-i", sdp_path,

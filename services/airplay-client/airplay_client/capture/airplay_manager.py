@@ -34,12 +34,13 @@ class AirPlayManager:
 
 
     def build_command(self) -> list[str]:
-        """Build the UxPlay command with RTP forwarding."""
-        vrtp_pipeline = (
-            "h264parse ! rtph264pay config-interval=1 "
-            f"! udpsink host=127.0.0.1 port={self.udp_port}"
-        )
-        return [self.uxplay_path, "-n", self.airplay_name, "-vrtp", vrtp_pipeline, "-vs", "0"]  # headless (no video display window)
+        """Build the UxPlay command with RTP forwarding.
+
+        UxPlay automatically adds 'h264parse ! rtph264pay' before the -vrtp
+        argument, so we only provide rtph264pay options and the UDP sink.
+        """
+        vrtp_pipeline = f"config-interval=1 ! udpsink host=127.0.0.1 port={self.udp_port}"
+        return [self.uxplay_path, "-n", self.airplay_name, "-vrtp", vrtp_pipeline]
 
 
     def start(self) -> None:
