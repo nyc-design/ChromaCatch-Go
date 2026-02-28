@@ -1,0 +1,104 @@
+name: Release Client CLI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Run all tests
+        run: poetry run pytest -v
+
+  build:
+    name: Build Client Wheel
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Verify shared symlink resolves
+        run: |
+          ls -la services/airplay-client/shared
+          test -f services/airplay-client/shared/__init__.py
+          test -f services/airplay-client/shared/messages.py
+          echo "Symlink OK: shared package is accessible"
+
+      - name: Verify version matches tag
+        working-directory: services/airplay-client
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          TOML_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "$TAG_VERSION" != "$TOML_VERSION" ]; then
+            echo "ERROR: Tag $TAG_VERSION != pyproject.toml $TOML_VERSION"
+            exit 1
+          fi
+
+      - name: Build wheel and sdist
+        working-directory: services/airplay-client
+        run: python -m build
+
+      - name: List built artifacts
+        run: ls -la services/airplay-client/dist/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-dist
+          path: services/airplay-client/dist/*
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: client-dist
+          path: dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ## ChromaCatch-Go Client ${{ github.ref_name }}
+
+            ### Install on MacBook
+            ```bash
+            pip install chromacatch_client-*-py3-none-any.whl
+            ```
+
+            Or install directly from this release:
+            ```bash
+            pip install "chromacatch-client @ https://github.com/nyc-design/ChromaCatch-Go/releases/download/${{ github.ref_name }}/chromacatch_client-$(echo '${{ github.ref_name }}' | sed 's/^v//')-py3-none-any.whl"
+            ```

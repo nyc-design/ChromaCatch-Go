@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chromacatch-client"
+version = "0.1.0"
+description = "ChromaCatch-Go AirPlay client - captures iPhone screen and forwards to backend"
+requires-python = ">=3.11"
+dependencies = [
+    "opencv-python-headless>=4.9.0",
+    "numpy>=1.26.0",
+    "httpx>=0.25.0",
+    "websockets>=12.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+]
+
+[project.scripts]
+chromacatch-client = "airplay_client.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["airplay_client*", "shared*"]
