@@ -3,7 +3,6 @@
 import logging
 import os
 import queue
-import re
 import shutil
 import subprocess
 import threading
@@ -40,6 +39,7 @@ class FrameCapture:
         self.frame_queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=max_queue_size)
         self._capture: cv2.VideoCapture | None = None
         self._gst_proc: subprocess.Popen | None = None
+        self._frame_dir: str | None = None
         self._thread: threading.Thread | None = None
         self._running = False
 
@@ -71,118 +71,90 @@ class FrameCapture:
         )
 
 
-    def _start_gst_cli_process(self) -> tuple[subprocess.Popen, int, int]:
-        """Start gst-launch-1.0 subprocess to decode RTP H264 → raw BGR frames.
+    def _start_gst_cli_process(self) -> tuple[str, int, int]:
+        """Start gst-launch-1.0 with multifilesink for frame capture.
 
-        Returns (process, width, height). Resolution is auto-detected from
-        GStreamer's stderr output (the caps negotiation messages).
+        Uses a SINGLE pipeline that writes decoded BGR frames to temp files.
+        This avoids the SPS/PPS timing issue — the iPhone only sends SPS/PPS +
+        IDR keyframe once at AirPlay connection time, so we must keep one
+        continuous pipeline from the start. A two-phase approach (probe then
+        restart) would lose the keyframe and never decode.
 
-        On macOS, gst-launch fully buffers stderr when piped (not a TTY),
-        so caps info never arrives. We use a pseudo-TTY for stderr to force
-        line buffering.
+        On macOS, gst-launch outputs ALL verbose info to stdout (not stderr),
+        so fdsink is unusable (raw frame bytes + text would mix). multifilesink
+        avoids this entirely by writing to disk.
+
+        Returns (frame_dir, width, height). Stores proc in self._gst_proc.
         """
+        import tempfile
+
         gst_path = shutil.which("gst-launch-1.0")
         if not gst_path:
             raise RuntimeError("gst-launch-1.0 not found. Install GStreamer.")
 
+        frame_dir = tempfile.mkdtemp(prefix="chromacatch_frames_")
+        frame_pattern = os.path.join(frame_dir, "frame_%05d.raw")
         cmd = [
-            gst_path, "-v",
+            gst_path,
             "udpsrc", f"port={self.udp_port}",
             f'caps=application/x-rtp,media=video,encoding-name=H264,payload=96,clock-rate=90000',
             "!", "rtph264depay", "!", "h264parse", "!", "avdec_h264",
             "!", "videoconvert", "!", "video/x-raw,format=BGR",
-            "!", "fdsink", "fd=1",
+            "!", "multifilesink", f"location={frame_pattern}", "max-files=30",
         ]
         logger.info("Starting GStreamer CLI: %s", " ".join(cmd))
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self._gst_proc = proc
+        self._frame_dir = frame_dir
 
-        # Use a pseudo-TTY for stderr so gst-launch line-buffers its output.
-        # Without this, macOS fully buffers stderr when piped, and the caps
-        # negotiation messages never arrive for resolution detection.
-        import pty
-        stderr_master, stderr_slave = pty.openpty()
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=stderr_slave, bufsize=10**8)
-        os.close(stderr_slave)  # Only the child needs the slave end
+        # Drain stdout+stderr in background to prevent pipe blocking
+        # (macOS gst-launch sends verbose info to stdout, not stderr)
+        for stream in (proc.stdout, proc.stderr):
+            threading.Thread(target=self._drain_stream, args=(stream,), daemon=True).start()
 
-        stderr_stream = os.fdopen(stderr_master, "rb", 0)  # Unbuffered read
-
-        # Read stderr line-by-line until we find the negotiated resolution
-        # GStreamer -v outputs caps like: video/x-raw, format=BGR, width=1920, height=1080
+        # Wait for first frame file to detect resolution
         width, height = 0, 0
-        deadline = time.time() + 120  # Wait up to 2 minutes for iPhone to connect
-        buf = b""
-        logger.info("GStreamer CLI pid=%d, waiting for stream...", proc.pid)
+        deadline = time.time() + 120
+        first_frame = os.path.join(frame_dir, "frame_00000.raw")
+        logger.info("GStreamer pid=%d, waiting for first decoded frame...", proc.pid)
+
         while time.time() < deadline and self._running:
-            try:
-                byte = stderr_stream.read(1)
-            except OSError:
-                rc = proc.poll()
-                logger.debug("GStreamer stderr read error, exit code: %s", rc)
-                break
-            if not byte:
-                rc = proc.poll()
-                logger.debug("GStreamer stderr EOF, exit code: %s", rc)
-                break
-            buf += byte
-            if byte in (b"\n", b"\r"):
-                line = buf.decode("utf-8", errors="replace").rstrip()
-                if line:
-                    logger.debug("[gst] %s", line)
-                # Look for negotiated caps: width=(int)1920, height=(int)1080
-                w_match = re.search(r"width=\(int\)(\d+)", line)
-                h_match = re.search(r"height=\(int\)(\d+)", line)
-                if w_match and h_match and "BGR" in line:
-                    width, height = int(w_match.group(1)), int(h_match.group(1))
+            if proc.poll() is not None:
+                raise RuntimeError(f"GStreamer exited early (rc={proc.returncode})")
+            if os.path.exists(first_frame):
+                time.sleep(0.1)  # Let the file finish writing
+                frame_bytes = os.path.getsize(first_frame)
+                if frame_bytes > 0:
+                    # BGR: 3 bytes per pixel. Try even widths to find valid resolution.
+                    for w in range(100, 4000, 2):
+                        if frame_bytes % (w * 3) == 0:
+                            h = frame_bytes // (w * 3)
+                            if 100 < h < 4000:
+                                width, height = w, h
+                                break
+                    if width == 0:
+                        logger.warning("Could not determine resolution from frame size %d", frame_bytes)
                     break
-                buf = b""
+            time.sleep(0.5)
 
         if width == 0 or height == 0:
-            rc = proc.poll()
-            logger.warning("GStreamer failed to detect resolution (exit code: %s)", rc)
-            stderr_stream.close()
-            proc.kill()
+            proc.terminate()
             raise RuntimeError("Could not detect stream resolution from GStreamer")
 
         logger.info("Detected stream resolution: %dx%d", width, height)
-
-        # Drain remaining stderr in background to prevent pipe blocking
-        threading.Thread(target=self._drain_stderr_fd, args=(stderr_stream,), daemon=True).start()
-
-        return proc, width, height
+        return frame_dir, width, height
 
 
     @staticmethod
-    def _drain_stderr(proc: subprocess.Popen) -> None:
-        """Read and log stderr to prevent blocking."""
+    def _drain_stream(stream) -> None:
+        """Read and log a subprocess stream to prevent pipe buffer blocking."""
         try:
-            for line in proc.stderr:
+            for line in stream:
                 text = line.decode("utf-8", errors="replace").rstrip()
                 if text:
                     logger.debug("[gst] %s", text)
         except Exception:
             pass
-
-    @staticmethod
-    def _drain_stderr_fd(stderr_stream) -> None:
-        """Read and log a PTY stderr stream to prevent blocking."""
-        buf = b""
-        try:
-            while True:
-                byte = stderr_stream.read(1)
-                if not byte:
-                    break
-                buf += byte
-                if byte in (b"\n", b"\r"):
-                    line = buf.decode("utf-8", errors="replace").rstrip()
-                    if line:
-                        logger.debug("[gst] %s", line)
-                    buf = b""
-        except OSError:
-            pass
-        finally:
-            try:
-                stderr_stream.close()
-            except OSError:
-                pass
 
 
     def _capture_loop_gstreamer(self) -> None:
@@ -212,27 +184,73 @@ class FrameCapture:
 
 
     def _capture_loop_gst_cli(self) -> None:
-        """Capture loop using gst-launch-1.0 subprocess piping raw frames."""
+        """Capture loop using gst-launch-1.0 with multifilesink.
+
+        Reads decoded BGR frame files from a temp directory. A single
+        continuous GStreamer pipeline writes frames there, ensuring we
+        never miss the SPS/PPS+IDR keyframe burst.
+        """
         logger.info("Waiting for AirPlay stream on port %d (GStreamer CLI)...", self.udp_port)
 
-        proc, width, height = None, 0, 0
-        while self._running and proc is None:
+        frame_dir, width, height = None, 0, 0
+        while self._running and frame_dir is None:
             try:
-                proc, width, height = self._start_gst_cli_process()
-                self._gst_proc = proc
+                frame_dir, width, height = self._start_gst_cli_process()
                 logger.info("AirPlay stream connected via GStreamer CLI!")
             except RuntimeError as e:
                 logger.info("GStreamer not ready: %s — retrying in 3s...", e)
                 time.sleep(3)
 
         frame_size = width * height * 3
-        while self._running and proc is not None:
-            raw = proc.stdout.read(frame_size)
-            if len(raw) != frame_size:
-                logger.warning("GStreamer stream ended (got %d/%d bytes)", len(raw), frame_size)
+        frame_idx = 0
+
+        while self._running:
+            # Check if GStreamer process died
+            if self._gst_proc and self._gst_proc.poll() is not None:
+                logger.warning("GStreamer process exited (rc=%d)", self._gst_proc.returncode)
                 break
-            frame = np.frombuffer(raw, dtype=np.uint8).reshape((height, width, 3))
-            self._push_frame(frame)
+
+            frame_path = os.path.join(frame_dir, f"frame_{frame_idx:05d}.raw")
+
+            if not os.path.exists(frame_path):
+                # Maybe we fell behind and max-files cleaned up — skip ahead
+                skipped = False
+                for skip in range(1, 20):
+                    alt = os.path.join(frame_dir, f"frame_{frame_idx + skip:05d}.raw")
+                    if os.path.exists(alt):
+                        frame_idx += skip
+                        frame_path = alt
+                        skipped = True
+                        break
+                if not skipped:
+                    time.sleep(0.01)
+                    continue
+
+            # Wait for file to be fully written
+            try:
+                fsize = os.path.getsize(frame_path)
+            except OSError:
+                time.sleep(0.005)
+                continue
+            if fsize < frame_size:
+                time.sleep(0.005)
+                continue
+
+            try:
+                with open(frame_path, "rb") as f:
+                    data = f.read(frame_size)
+                if len(data) == frame_size:
+                    frame = np.frombuffer(data, dtype=np.uint8).reshape((height, width, 3))
+                    self._push_frame(frame)
+            except (OSError, ValueError) as e:
+                logger.debug("Frame %d read error: %s", frame_idx, e)
+
+            try:
+                os.remove(frame_path)
+            except OSError:
+                pass
+
+            frame_idx += 1
 
         logger.info("GStreamer CLI capture loop stopped")
 
@@ -276,6 +294,9 @@ class FrameCapture:
             self._gst_proc.kill()
             self._gst_proc.wait(timeout=3)
             self._gst_proc = None
+        if self._frame_dir and os.path.isdir(self._frame_dir):
+            shutil.rmtree(self._frame_dir, ignore_errors=True)
+            self._frame_dir = None
         logger.info("Frame capture stopped")
 
 
