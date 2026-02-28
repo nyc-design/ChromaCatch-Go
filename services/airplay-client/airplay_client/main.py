@@ -70,7 +70,10 @@ class ChromaCatchClient:
     async def _status_reporter_loop(self) -> None:
         """Send periodic status updates to backend."""
         while True:
-            esp32_reachable = await self._esp32.ping()
+            try:
+                esp32_reachable = await self._esp32.ping()
+            except Exception:
+                esp32_reachable = False
             esp32_ble = None
             if esp32_reachable:
                 try:

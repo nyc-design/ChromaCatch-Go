@@ -84,7 +84,7 @@ class ESP32Client:
         try:
             response = await self._client.get("/ping")
             return response.status_code == 200
-        except httpx.ConnectError:
+        except httpx.HTTPError:
             return False
 
     async def status(self) -> dict:
