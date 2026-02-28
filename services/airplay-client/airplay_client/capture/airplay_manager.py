@@ -69,7 +69,9 @@ class AirPlayManager:
             "-d",              # Debug logging for diagnostics
             "-vrtp", vrtp_pipeline,
         ]
-        if settings.audio_enabled:
+        audio_mode = settings.audio_source.lower().strip()
+        use_airplay_audio = settings.audio_enabled and audio_mode in {"auto", "airplay"}
+        if use_airplay_audio:
             cmd.extend(["-artp", artp_pipeline])
         return cmd
 

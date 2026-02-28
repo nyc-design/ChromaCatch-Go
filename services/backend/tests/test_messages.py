@@ -142,6 +142,7 @@ class TestClientStatus:
         assert msg.airplay_pid is None
         assert msg.esp32_ble_connected is None
         assert msg.frames_captured == 0
+        assert msg.audio_source is None
 
     def test_roundtrip_json(self):
         msg = ClientStatus(airplay_running=True, esp32_reachable=False, uptime_seconds=120.5)

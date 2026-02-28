@@ -46,13 +46,27 @@ class TestAirPlayManager:
         assert "rtph264pay" not in pipeline
 
     def test_build_command_without_audio(self, manager):
-        old = client_settings.audio_enabled
+        old_enabled = client_settings.audio_enabled
+        old_source = client_settings.audio_source
         try:
             client_settings.audio_enabled = False
             cmd = manager.build_command()
             assert "-artp" not in cmd
         finally:
-            client_settings.audio_enabled = old
+            client_settings.audio_enabled = old_enabled
+            client_settings.audio_source = old_source
+
+    def test_build_command_without_airplay_audio_mode(self, manager):
+        old_enabled = client_settings.audio_enabled
+        old_source = client_settings.audio_source
+        try:
+            client_settings.audio_enabled = True
+            client_settings.audio_source = "system"
+            cmd = manager.build_command()
+            assert "-artp" not in cmd
+        finally:
+            client_settings.audio_enabled = old_enabled
+            client_settings.audio_source = old_source
 
     def test_not_running_initially(self, manager):
         assert manager.is_running is False

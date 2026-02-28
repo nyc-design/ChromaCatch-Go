@@ -68,6 +68,7 @@ class ClientStatus(BaseMessage):
     commands_acked: int = 0
     last_command_rtt_ms: float | None = None
     audio_enabled: bool = False
+    audio_source: str | None = None
     audio_chunks_captured: int = 0
     audio_chunks_sent: int = 0
     uptime_seconds: float = 0.0

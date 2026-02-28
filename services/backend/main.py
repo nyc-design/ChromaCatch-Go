@@ -285,6 +285,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                                     <span class="value">${s.last_command_rtt_ms ? Math.round(s.last_command_rtt_ms) + ' ms' : 'n/a'}</span></div>
                                 <div class="status-item"><span class="label">Audio Chunks</span><br>
                                     <span class="value">${s.audio_chunks_sent || 0}</span></div>
+                                <div class="status-item"><span class="label">Audio Source</span><br>
+                                    <span class="value">${s.audio_source || 'n/a'}</span></div>
                                 <div class="status-item"><span class="label">Uptime</span><br>
                                     <span class="value">${Math.floor((s.uptime_seconds || 0) / 60)}m ${Math.floor((s.uptime_seconds || 0) % 60)}s</span></div>`;
                         } else {

@@ -51,9 +51,12 @@ class ClientSettings(BaseSettings):
 
     # Audio transport
     audio_enabled: bool = True
+    audio_source: str = "auto"  # auto | airplay | system | none
     audio_sample_rate: int = DEFAULT_AUDIO_SAMPLE_RATE
     audio_channels: int = DEFAULT_AUDIO_CHANNELS
     audio_chunk_ms: int = DEFAULT_AUDIO_CHUNK_MS
+    audio_input_backend: str = "auto"  # auto | avfoundation | pulse | dshow
+    audio_input_device: str = ""  # backend-specific input selector
 
     # WebSocket resilience
     ws_reconnect_delay: float = 1.0

@@ -30,10 +30,11 @@ Automated shiny hunting bot for Pokemon Go using AirPlay screen mirroring, compu
 1. iPhone runs Pokemon Go, screen mirrors via AirPlay to UxPlay (on local client)
 2. UxPlay decrypts H.264 stream, forwards as RTP over localhost UDP
 3. Local client captures frames via a unified source layer (`airplay` / `capture` / `screen`), JPEG-encodes (720px, q65 default), sends over WebSocket
-4. Remote backend decodes frames, runs CV pipeline, decides next action
-5. Backend sends HID command over WebSocket to local client
-6. Local client forwards command to ESP32 via HTTP
-7. ESP32 emits BLE HID mouse event to iPhone
+4. Local client captures audio via a unified audio layer (`auto` / `airplay` / `system`), sends PCM chunks over WebSocket
+5. Remote backend decodes frames, runs CV pipeline, decides next action
+6. Backend sends HID command over WebSocket to local client
+7. Local client forwards command to ESP32 via HTTP
+8. ESP32 emits BLE HID mouse event to iPhone
 
 ### WebSocket Protocol
 - **Frames (client → backend)**: Two-message pattern — JSON `FrameMetadata` followed by binary JPEG bytes
@@ -65,7 +66,7 @@ ChromaCatch-Go/
 │   │   ├── session_manager.py               # Dual-channel client session tracking
 │   │   ├── cv/                              # Phase 2: computer vision
 │   │   ├── orchestrator/                    # Phase 3: state machine
-│   │   └── tests/                           # Backend tests (69 tests)
+│   │   └── tests/                           # Backend tests (81 tests)
 │   │       ├── test_backend_api.py
 │   │       ├── test_session_manager.py
 │   │       ├── test_ws_handler.py
@@ -78,6 +79,10 @@ ChromaCatch-Go/
 │   │   │   ├── cli.py                        # CLI entry point (connect, run)
 │   │   │   ├── config.py                    # ClientSettings (CC_CLIENT_ prefix)
 │   │   │   ├── main.py                      # asyncio entrypoint (dual WS + source factory)
+│   │   │   ├── audio/
+│   │   │   │   ├── factory.py               # Runtime audio source selection
+│   │   │   │   ├── airplay_audio_source.py  # AirPlay RTP audio source adapter
+│   │   │   │   └── ffmpeg_audio_source.py   # System/capture-device audio adapter
 │   │   │   ├── ws_client.py                 # WebSocket client (auto-reconnect + command ack)
 │   │   │   ├── esp32_forwarder.py           # WS command → ESP32 HTTP bridge (+ ack timing)
 │   │   │   ├── capture/
@@ -91,7 +96,7 @@ ChromaCatch-Go/
 │   │   │   │   └── factory.py               # Runtime source selection
 │   │   │   └── commander/
 │   │   │       └── esp32_client.py          # HTTP client for ESP32 commands
-│   │   └── tests/                           # Client tests (45 tests)
+│   │   └── tests/                           # Client tests (76 tests)
 │   │       ├── test_airplay_manager.py
 │   │       ├── test_esp32_client.py
 │   │       ├── test_esp32_forwarder.py
@@ -121,7 +126,7 @@ ChromaCatch-Go/
 | ESP32 firmware | C++ / Arduino / PlatformIO |
 | ESP32 comms | WiFi HTTP (REST) |
 | BLE HID | ESP32 BLE HID library (BleCombo) |
-| Testing | pytest, pytest-asyncio (147 tests) |
+| Testing | pytest, pytest-asyncio (157 tests) |
 | Linting | ruff, black, mypy |
 
 ## Phases
@@ -134,7 +139,7 @@ ChromaCatch-Go/
 - [x] WebSocket client (local client → remote backend)
 - [x] WebSocket server (backend receives frames, dispatches commands)
 - [x] ESP32 command forwarder (backend → client → ESP32)
-- [x] Integration tests (121 total)
+- [x] Integration tests (157 total)
 - [x] CLI tool packaging (pip-installable `chromacatch-client`)
 - [x] Backend live dashboard with MJPEG frame streaming
 - [x] HID mouse test script
@@ -161,7 +166,7 @@ ChromaCatch-Go/
 # Install
 poetry install
 
-# Run all tests (121 tests)
+# Run all tests (157 tests)
 poetry run pytest
 
 # Run by suite
@@ -214,9 +219,12 @@ CC_CLIENT_JPEG_QUALITY=65
 CC_CLIENT_MAX_DIMENSION=720
 CC_CLIENT_FRAME_INTERVAL_MS=33
 CC_CLIENT_AUDIO_ENABLED=true
+CC_CLIENT_AUDIO_SOURCE=auto                 # auto | airplay | system | none
 CC_CLIENT_AUDIO_SAMPLE_RATE=44100
 CC_CLIENT_AUDIO_CHANNELS=2
 CC_CLIENT_AUDIO_CHUNK_MS=100
+CC_CLIENT_AUDIO_INPUT_BACKEND=auto          # auto | avfoundation | pulse | dshow
+CC_CLIENT_AUDIO_INPUT_DEVICE=               # backend-specific input selector
 ```
 
 **Backend** (`.env` with `CC_BACKEND_` prefix):
