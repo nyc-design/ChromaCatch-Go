@@ -86,18 +86,24 @@ class ESP32Client:
             return result
         except httpx.ConnectError as e:
             logger.warning("HTTPX connect failed to ESP32 (%s), retrying with urllib", e)
-            try:
-                result = await asyncio.to_thread(
-                    self._urllib_request,
-                    "POST",
-                    "/command",
-                    payload,
-                )
-                logger.debug("ESP32 response (urllib fallback): %s", result)
-                return result
-            except Exception:
-                logger.error("Cannot connect to ESP32 at %s", self._base_url)
-                raise
+            last_error: Exception | None = None
+            for _ in range(6):
+                try:
+                    result = await asyncio.to_thread(
+                        self._urllib_request,
+                        "POST",
+                        "/command",
+                        payload,
+                    )
+                    logger.debug("ESP32 response (urllib fallback): %s", result)
+                    return result
+                except Exception as ex:
+                    last_error = ex
+                    await asyncio.sleep(0.15)
+            logger.error("Cannot connect to ESP32 at %s", self._base_url)
+            if last_error:
+                raise last_error
+            raise
         except httpx.HTTPStatusError as e:
             logger.error("ESP32 returned error: %s", e.response.text)
             raise
