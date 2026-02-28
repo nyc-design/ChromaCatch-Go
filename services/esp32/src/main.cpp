@@ -1,9 +1,10 @@
 /**
- * ChromaCatch-Go ESP32 Firmware
+ * ChromaCatch-Go ESP32-S3 Firmware
  *
  * BLE HID Mouse emulation + WiFi HTTP command server.
+ * Uses NimBLE stack for reliable BLE on ESP32-S3.
  *
- * The ESP32 advertises as a Bluetooth mouse. When paired with an iPhone,
+ * The ESP32-S3 advertises as a Bluetooth mouse. When paired with an iPhone,
  * it can send mouse move/click/swipe events. Commands are received over
  * WiFi HTTP from the local airplay client.
  *
@@ -15,9 +16,10 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
-#include <BleCombo.h>  // ESP32-BLE-Combo for mouse+keyboard HID
+#include <BleMouse.h>  // ESP32-NimBLE-Mouse (NimBLE-based, works on S3)
 
 // ============================================================
 // USER CONFIGURATION -- Edit these before flashing!
@@ -42,20 +44,20 @@ const char* BLE_DEVICE_NAME = "ChromaCatch Mouse";
 
 // ---- Globals ----
 WebServer server(HTTP_PORT);
-bool bleConnected = false;
+BleMouse mouse(BLE_DEVICE_NAME, "ChromaCatch", 100);
 
 // ---- BLE HID Setup ----
 void setupBLE() {
-    Serial.println("Starting BLE HID Mouse...");
-    Keyboard.begin();  // BleCombo initializes both keyboard and mouse
-    Mouse.begin();
-    Serial.println("BLE HID Mouse advertising as: " + String(BLE_DEVICE_NAME));
+    Serial.println("Starting BLE HID Mouse (NimBLE)...");
+    mouse.begin();
+    Serial.println("BLE advertising as: " + String(BLE_DEVICE_NAME));
 }
 
 // ---- WiFi Setup ----
 void setupWiFi() {
     Serial.print("Connecting to WiFi: ");
     Serial.println(WIFI_SSID);
+    WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
     int attempts = 0;
@@ -69,6 +71,8 @@ void setupWiFi() {
         Serial.println("\nWiFi connected!");
         Serial.print("IP address: ");
         Serial.println(WiFi.localIP());
+        MDNS.begin("chromacatch");
+        Serial.println("mDNS: chromacatch.local");
     } else {
         Serial.println("\nWiFi connection failed! Commands will not work.");
     }
@@ -82,7 +86,7 @@ void handlePing() {
 
 void handleStatus() {
     JsonDocument doc;
-    doc["ble_connected"] = Keyboard.isConnected();
+    doc["ble_connected"] = mouse.isConnected();
     doc["ip"] = WiFi.localIP().toString();
     doc["device_name"] = BLE_DEVICE_NAME;
 
@@ -106,7 +110,7 @@ void handleCommand() {
 
     String action = doc["action"].as<String>();
 
-    if (!Keyboard.isConnected()) {
+    if (!mouse.isConnected()) {
         server.send(503, "application/json", "{\"error\":\"BLE not connected\"}");
         return;
     }
@@ -117,7 +121,7 @@ void handleCommand() {
     if (action == "move") {
         int dx = doc["dx"] | 0;
         int dy = doc["dy"] | 0;
-        Mouse.move(dx, dy);
+        mouse.move(dx, dy);
         response["status"] = "ok";
         response["dx"] = dx;
         response["dy"] = dy;
@@ -126,9 +130,9 @@ void handleCommand() {
         int x = doc["x"] | 0;
         int y = doc["y"] | 0;
         // Move to position then click
-        Mouse.move(x, y);
+        mouse.move(x, y);
         delay(10);
-        Mouse.click(MOUSE_LEFT);
+        mouse.click(MOUSE_LEFT);
         response["status"] = "ok";
         response["x"] = x;
         response["y"] = y;
@@ -146,24 +150,24 @@ void handleCommand() {
         int stepX = (x2 - x1) / steps;
         int stepY = (y2 - y1) / steps;
 
-        Mouse.move(x1, y1);
+        mouse.move(x1, y1);
         delay(10);
-        Mouse.press(MOUSE_LEFT);
+        mouse.press(MOUSE_LEFT);
         for (int i = 0; i < steps; i++) {
-            Mouse.move(stepX, stepY);
+            mouse.move(stepX, stepY);
             delay(10);
         }
-        Mouse.release(MOUSE_LEFT);
+        mouse.release(MOUSE_LEFT);
 
         response["status"] = "ok";
         response["steps"] = steps;
     }
     else if (action == "press") {
-        Mouse.press(MOUSE_LEFT);
+        mouse.press(MOUSE_LEFT);
         response["status"] = "ok";
     }
     else if (action == "release") {
-        Mouse.release(MOUSE_LEFT);
+        mouse.release(MOUSE_LEFT);
         response["status"] = "ok";
     }
     else {
@@ -184,10 +188,10 @@ void handleCommand() {
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("\n=== ChromaCatch-Go ESP32 ===");
+    Serial.println("\n=== ChromaCatch-Go ESP32-S3 ===");
 
-    setupBLE();
-    setupWiFi();
+    setupWiFi();   // WiFi first (must be established before BLE on S3)
+    setupBLE();    // BLE second (matches working pattern from ChromaCatch-Old)
 
     // Register HTTP routes
     server.on("/ping", HTTP_GET, handlePing);
@@ -204,7 +208,7 @@ void loop() {
 
     // Periodically log BLE connection state changes
     static bool lastConnected = false;
-    bool connected = Keyboard.isConnected();
+    bool connected = mouse.isConnected();
     if (connected != lastConnected) {
         Serial.println(connected ? "BLE device connected!" : "BLE device disconnected.");
         lastConnected = connected;
