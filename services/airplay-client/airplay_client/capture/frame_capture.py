@@ -1,6 +1,7 @@
 """Captures video frames from the UxPlay RTP stream."""
 
 import logging
+import os
 import queue
 import re
 import shutil
@@ -75,6 +76,10 @@ class FrameCapture:
 
         Returns (process, width, height). Resolution is auto-detected from
         GStreamer's stderr output (the caps negotiation messages).
+
+        On macOS, gst-launch fully buffers stderr when piped (not a TTY),
+        so caps info never arrives. We use a pseudo-TTY for stderr to force
+        line buffering.
         """
         gst_path = shutil.which("gst-launch-1.0")
         if not gst_path:
@@ -89,7 +94,16 @@ class FrameCapture:
             "!", "fdsink", "fd=1",
         ]
         logger.info("Starting GStreamer CLI: %s", " ".join(cmd))
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**8)
+
+        # Use a pseudo-TTY for stderr so gst-launch line-buffers its output.
+        # Without this, macOS fully buffers stderr when piped, and the caps
+        # negotiation messages never arrive for resolution detection.
+        import pty
+        stderr_master, stderr_slave = pty.openpty()
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=stderr_slave, bufsize=10**8)
+        os.close(stderr_slave)  # Only the child needs the slave end
+
+        stderr_stream = os.fdopen(stderr_master, "rb", 0)  # Unbuffered read
 
         # Read stderr line-by-line until we find the negotiated resolution
         # GStreamer -v outputs caps like: video/x-raw, format=BGR, width=1920, height=1080
@@ -98,7 +112,12 @@ class FrameCapture:
         buf = b""
         logger.info("GStreamer CLI pid=%d, waiting for stream...", proc.pid)
         while time.time() < deadline and self._running:
-            byte = proc.stderr.read(1)
+            try:
+                byte = stderr_stream.read(1)
+            except OSError:
+                rc = proc.poll()
+                logger.debug("GStreamer stderr read error, exit code: %s", rc)
+                break
             if not byte:
                 rc = proc.poll()
                 logger.debug("GStreamer stderr EOF, exit code: %s", rc)
@@ -119,13 +138,14 @@ class FrameCapture:
         if width == 0 or height == 0:
             rc = proc.poll()
             logger.warning("GStreamer failed to detect resolution (exit code: %s)", rc)
+            stderr_stream.close()
             proc.kill()
             raise RuntimeError("Could not detect stream resolution from GStreamer")
 
         logger.info("Detected stream resolution: %dx%d", width, height)
 
         # Drain remaining stderr in background to prevent pipe blocking
-        threading.Thread(target=self._drain_stderr, args=(proc,), daemon=True).start()
+        threading.Thread(target=self._drain_stderr_fd, args=(stderr_stream,), daemon=True).start()
 
         return proc, width, height
 
@@ -140,6 +160,29 @@ class FrameCapture:
                     logger.debug("[gst] %s", text)
         except Exception:
             pass
+
+    @staticmethod
+    def _drain_stderr_fd(stderr_stream) -> None:
+        """Read and log a PTY stderr stream to prevent blocking."""
+        buf = b""
+        try:
+            while True:
+                byte = stderr_stream.read(1)
+                if not byte:
+                    break
+                buf += byte
+                if byte in (b"\n", b"\r"):
+                    line = buf.decode("utf-8", errors="replace").rstrip()
+                    if line:
+                        logger.debug("[gst] %s", line)
+                    buf = b""
+        except OSError:
+            pass
+        finally:
+            try:
+                stderr_stream.close()
+            except OSError:
+                pass
 
 
     def _capture_loop_gstreamer(self) -> None:
