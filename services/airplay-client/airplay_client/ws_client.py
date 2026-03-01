@@ -81,11 +81,14 @@ class WebSocketClient:
                 connect_url = self._build_connect_url()
 
                 ssl_ctx = None
-                if connect_url.startswith("wss://") and not client_settings.ws_ssl_verify:
-                    import ssl
-                    ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-                    ssl_ctx.check_hostname = False
-                    ssl_ctx.verify_mode = ssl.CERT_NONE
+                if connect_url.startswith("wss://"):
+                    if not client_settings.ws_ssl_verify:
+                        import ssl
+                        ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                        ssl_ctx.check_hostname = False
+                        ssl_ctx.verify_mode = ssl.CERT_NONE
+                    else:
+                        ssl_ctx = True
 
                 self._ws = await websockets.connect(
                     connect_url,
