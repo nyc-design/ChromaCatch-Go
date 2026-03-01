@@ -17,6 +17,7 @@ from airplay_client.capture.process_cleanup import cleanup_stale_airplay_process
 from airplay_client.commander.esp32_client import ESP32Client
 from airplay_client.config import client_settings
 from airplay_client.esp32_forwarder import ESP32Forwarder
+from airplay_client.runtime_lock import SingleInstanceLock
 from airplay_client.sources.airplay_source import AirPlayFrameSource
 from airplay_client.sources.base import FrameSource
 from airplay_client.sources.factory import create_frame_source
@@ -200,6 +201,14 @@ class ChromaCatchClient:
 
 def main():
     setup_logging()
+    runtime_lock = SingleInstanceLock(client_settings.client_id)
+    if not runtime_lock.acquire():
+        logger.error(
+            "Another chromacatch-client instance is already running for client_id=%s",
+            client_settings.client_id,
+        )
+        raise SystemExit(2)
+
     client = ChromaCatchClient()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -232,6 +241,7 @@ def main():
         except Exception:
             logger.exception("Client shutdown encountered an error")
         loop.close()
+        runtime_lock.release()
 
 
 if __name__ == "__main__":

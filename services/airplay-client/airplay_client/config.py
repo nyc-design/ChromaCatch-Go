@@ -1,6 +1,7 @@
 """Configuration for the local client."""
 
 import socket
+import tempfile
 
 from pydantic_settings import BaseSettings
 
@@ -64,6 +65,9 @@ class ClientSettings(BaseSettings):
     ws_reconnect_delay: float = 1.0
     ws_reconnect_max_delay: float = 30.0
     ws_heartbeat_interval: float = 10.0
+
+    # Process lifecycle
+    single_instance_lock_path: str = tempfile.gettempdir()
 
     model_config = {"env_file": ".env", "env_prefix": "CC_CLIENT_"}
 
