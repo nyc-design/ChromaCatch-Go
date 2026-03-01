@@ -68,7 +68,7 @@ class AppCoordinator: ObservableObject {
         self.esp32Port = savedESP32Port
         self.clientId = savedClientId
 
-        // Initialize managers with shared logging
+        // Initialize managers with shared logging — all messages go to Xcode console + app UI
         var coordinator: AppCoordinator?
         let logFn: (String) -> Void = { message in
             Task { @MainActor in
@@ -328,6 +328,7 @@ class AppCoordinator: ObservableObject {
     // MARK: - Logging
 
     func addLog(_ message: String) {
+        print("[CC] \(message)")
         let entry = LogEntry(timestamp: Date(), message: message)
         logs.insert(entry, at: 0)
         if logs.count > 500 { logs.removeLast() }

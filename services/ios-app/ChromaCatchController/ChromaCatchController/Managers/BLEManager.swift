@@ -54,12 +54,14 @@ class BLEManager: NSObject, ObservableObject {
         }
         guard !isScanning else { return }
         isScanning = true
+        // Scan without service UUID filter — many BLE devices (including iTools)
+        // don't advertise service UUIDs. We filter by device name in didDiscover instead.
         centralManager.scanForPeripherals(
-            withServices: [Self.serviceUUID],
+            withServices: nil,
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
-        log("Scanning for BT-01414-APP (service FF12)...")
-        print("[BLE] Started scanning for service FF12")
+        log("Scanning for BT-01414 devices (any service)...")
+        print("[BLE] Started scanning (no service filter, matching by name prefix)")
     }
 
     func stopScanning() {
@@ -139,10 +141,16 @@ extension BLEManager: CBCentralManagerDelegate {
                         advertisementData: [String: Any],
                         rssi RSSI: NSNumber) {
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? ""
-        log("Discovered: \(name) (RSSI: \(RSSI))")
+
+        // Only log named devices to avoid spam from unnamed beacons
+        if !name.isEmpty {
+            let serviceUUIDs = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
+            print("[BLE] Discovered: \(name) RSSI=\(RSSI) services=\(serviceUUIDs)")
+        }
 
         guard name.hasPrefix(Self.deviceNamePrefix) else { return }
 
+        log("Found dongle: \(name) (RSSI: \(RSSI))")
         self.peripheral = peripheral
         centralManager.stopScan()
         isScanning = false
