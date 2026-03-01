@@ -27,11 +27,6 @@ class H264Encoder {
     }
 
     func start() -> Bool {
-        let callback: VTCompressionOutputHandler = { [weak self] status, flags, sampleBuffer in
-            guard let self = self, status == noErr, let sampleBuffer = sampleBuffer else { return }
-            self.handleEncodedFrame(sampleBuffer)
-        }
-
         var status = VTCompressionSessionCreate(
             allocator: nil,
             width: width,
@@ -40,7 +35,8 @@ class H264Encoder {
             encoderSpecification: nil,
             imageBufferAttributes: nil,
             compressedDataAllocator: nil,
-            outputHandler: callback,
+            outputCallback: compressionOutputCallback,
+            refcon: Unmanaged.passUnretained(self).toOpaque(),
             compressionSessionOut: &session
         )
 
@@ -70,8 +66,9 @@ class H264Encoder {
             presentationTimeStamp: pts,
             duration: duration,
             frameProperties: nil,
+            sourceFrameRefcon: nil,
             infoFlagsOut: nil
-        ) { _, _, _ in }
+        )
     }
 
     func stop() {
@@ -130,6 +127,11 @@ class H264Encoder {
         onEncodedAU?(annexBData, isKeyframe, captureTimestamp)
     }
 
+    fileprivate func handleEncodedOutput(status: OSStatus, sampleBuffer: CMSampleBuffer?) {
+        guard status == noErr, let sampleBuffer = sampleBuffer else { return }
+        handleEncodedFrame(sampleBuffer)
+    }
+
     private func extractParameterSets(from formatDesc: CMFormatDescription) -> Data {
         var data = Data()
         let startCode: [UInt8] = [0x00, 0x00, 0x00, 0x01]
@@ -161,4 +163,17 @@ class H264Encoder {
 
         return data
     }
+}
+
+/// C-function callback for VTCompressionSessionCreate (iOS 16 compatible).
+private func compressionOutputCallback(
+    outputCallbackRefCon: UnsafeMutableRawPointer?,
+    sourceFrameRefCon: UnsafeMutableRawPointer?,
+    status: OSStatus,
+    infoFlags: VTEncodeInfoFlags,
+    sampleBuffer: CMSampleBuffer?
+) {
+    guard let refCon = outputCallbackRefCon else { return }
+    let encoder = Unmanaged<H264Encoder>.fromOpaque(refCon).takeUnretainedValue()
+    encoder.handleEncodedOutput(status: status, sampleBuffer: sampleBuffer)
 }
