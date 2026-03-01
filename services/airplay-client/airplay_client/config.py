@@ -31,6 +31,7 @@ class ClientSettings(BaseSettings):
     airplay_audio_udp_port: int = 5002
     airplay_name: str = "ChromaCatch"
     uxplay_path: str = "uxplay"
+    cleanup_stale_airplay_processes: bool = True
 
     # Frame capture
     capture_source: str = "airplay"  # airplay | capture | screen
@@ -43,6 +44,7 @@ class ClientSettings(BaseSettings):
     target_fps: int = 30
     screen_monitor: int = 1
     screen_region: str = ""  # x,y,width,height
+    airplay_reconnect_timeout_s: float = 8.0
 
     # Frame encoding for transport
     jpeg_quality: int = DEFAULT_JPEG_QUALITY

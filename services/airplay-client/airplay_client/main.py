@@ -8,10 +8,12 @@ Ties together:
 
 import asyncio
 import logging
+import signal
 import time
 
 from airplay_client.audio.base import AudioSource
 from airplay_client.audio.factory import create_audio_source
+from airplay_client.capture.process_cleanup import cleanup_stale_airplay_processes
 from airplay_client.commander.esp32_client import ESP32Client
 from airplay_client.config import client_settings
 from airplay_client.esp32_forwarder import ESP32Forwarder
@@ -164,6 +166,15 @@ class ChromaCatchClient:
         """Start all client components."""
         logger.info("ChromaCatch-Go Client starting...")
 
+        if (
+            isinstance(self._frame_source, AirPlayFrameSource)
+            and client_settings.cleanup_stale_airplay_processes
+        ):
+            cleanup_stale_airplay_processes(
+                video_port=client_settings.airplay_udp_port,
+                audio_port=client_settings.airplay_audio_udp_port,
+            )
+
         if self._audio_source is not None:
             self._audio_source.start()
         self._frame_source.start()
@@ -191,12 +202,35 @@ def main():
     setup_logging()
     client = ChromaCatchClient()
     loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    stopping = False
+
+    def _request_stop() -> None:
+        nonlocal stopping
+        stopping = True
+        for task in asyncio.all_tasks(loop):
+            task.cancel()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _request_stop)
+        except NotImplementedError:
+            pass
+
     try:
         loop.run_until_complete(client.run())
     except KeyboardInterrupt:
         logger.info("Shutting down...")
-        loop.run_until_complete(client.shutdown())
+    except asyncio.CancelledError:
+        logger.info("Client cancelled")
+    except Exception:
+        logger.exception("Client crashed")
     finally:
+        try:
+            loop.run_until_complete(client.shutdown())
+        except Exception:
+            logger.exception("Client shutdown encountered an error")
         loop.close()
 
 

@@ -326,49 +326,76 @@ class FrameCapture:
         """
         logger.info("Waiting for AirPlay stream on port %d (GStreamer CLI)...", self.udp_port)
 
-        frame_dir = None
-        while self._running and frame_dir is None:
-            try:
-                frame_dir = self._start_gst_cli_process()
-                logger.info("AirPlay stream connected via GStreamer CLI!")
-            except RuntimeError as e:
-                logger.info("GStreamer not ready: %s — retrying in 3s...", e)
-                time.sleep(3)
-
-        last_frame_idx = -1
-
         while self._running:
-            # Check if GStreamer process died
-            if self._gst_proc and self._gst_proc.poll() is not None:
-                logger.warning("GStreamer process exited (rc=%d)", self._gst_proc.returncode)
+            frame_dir = None
+            while self._running and frame_dir is None:
+                try:
+                    frame_dir = self._start_gst_cli_process()
+                    logger.info("AirPlay stream connected via GStreamer CLI!")
+                except RuntimeError as e:
+                    logger.info("GStreamer not ready: %s — retrying in 3s...", e)
+                    time.sleep(3)
+
+            if not self._running:
                 break
 
-            files = self._list_frame_files(frame_dir)
-            newer_files = [(idx, path) for idx, path in files if idx > last_frame_idx]
-            if not newer_files:
-                time.sleep(0.01)
-                continue
+            last_frame_idx = -1
+            last_frame_at = time.time()
+            saw_frames = False
+            reconnect_timeout_s = max(2.0, settings.airplay_reconnect_timeout_s)
 
-            # Always consume the newest completed frame available to avoid stalling
-            # on missing/intermediate indices when multifilesink rolls quickly.
-            frame_idx, frame_path = newer_files[-1]
+            while self._running:
+                # Check if GStreamer process died
+                if self._gst_proc and self._gst_proc.poll() is not None:
+                    logger.warning(
+                        "GStreamer process exited (rc=%d), restarting capture loop",
+                        self._gst_proc.returncode,
+                    )
+                    break
 
-            if self._get_stable_file_size(frame_path, timeout=1.0) <= 0:
-                time.sleep(0.005)
-                continue
+                files = self._list_frame_files(frame_dir)
+                newer_files = [(idx, path) for idx, path in files if idx > last_frame_idx]
+                if not newer_files:
+                    if saw_frames and (time.time() - last_frame_at) > reconnect_timeout_s:
+                        logger.warning(
+                            "No new frames for %.1fs after stream was active; "
+                            "restarting capture pipeline",
+                            reconnect_timeout_s,
+                        )
+                        break
+                    time.sleep(0.01)
+                    continue
 
-            try:
-                with open(frame_path, "rb") as f:
-                    data = f.read()
-                if data:
-                    arr = np.frombuffer(data, dtype=np.uint8)
-                    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-                    if frame is None:
-                        raise ValueError("imdecode returned None")
-                    self._push_frame(frame)
-                    last_frame_idx = frame_idx
-            except (OSError, ValueError) as e:
-                logger.debug("Frame %d read error: %s", frame_idx, e)
+                # Always consume the newest completed frame available to avoid stalling
+                # on missing/intermediate indices when multifilesink rolls quickly.
+                frame_idx, frame_path = newer_files[-1]
+
+                if self._get_stable_file_size(frame_path, timeout=1.0) <= 0:
+                    time.sleep(0.005)
+                    continue
+
+                try:
+                    with open(frame_path, "rb") as f:
+                        data = f.read()
+                    if data:
+                        arr = np.frombuffer(data, dtype=np.uint8)
+                        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                        if frame is None:
+                            raise ValueError("imdecode returned None")
+                        self._push_frame(frame)
+                        last_frame_idx = frame_idx
+                        last_frame_at = time.time()
+                        saw_frames = True
+                except (OSError, ValueError) as e:
+                    logger.debug("Frame %d read error: %s", frame_idx, e)
+
+            if self._gst_proc and self._gst_proc.poll() is None:
+                self._gst_proc.kill()
+                self._gst_proc.wait(timeout=3)
+            self._gst_proc = None
+            if self._frame_dir and os.path.isdir(self._frame_dir):
+                shutil.rmtree(self._frame_dir, ignore_errors=True)
+            self._frame_dir = None
 
         logger.info("GStreamer CLI capture loop stopped")
 

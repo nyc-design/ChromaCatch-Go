@@ -96,7 +96,7 @@ ChromaCatch-Go/
 │   │   │   │   └── factory.py               # Runtime source selection
 │   │   │   └── commander/
 │   │   │       └── esp32_client.py          # HTTP client for ESP32 commands
-│   │   └── tests/                           # Client tests (76 tests)
+│   │   └── tests/                           # Client tests (78 tests)
 │   │       ├── test_airplay_manager.py
 │   │       ├── test_esp32_client.py
 │   │       ├── test_esp32_forwarder.py
@@ -126,7 +126,7 @@ ChromaCatch-Go/
 | ESP32 firmware | C++ / Arduino / PlatformIO |
 | ESP32 comms | WiFi HTTP (REST) |
 | BLE HID | ESP32 BLE HID library (BleCombo) |
-| Testing | pytest, pytest-asyncio (157 tests) |
+| Testing | pytest, pytest-asyncio (159 tests) |
 | Linting | ruff, black, mypy |
 
 ## Phases
@@ -139,7 +139,7 @@ ChromaCatch-Go/
 - [x] WebSocket client (local client → remote backend)
 - [x] WebSocket server (backend receives frames, dispatches commands)
 - [x] ESP32 command forwarder (backend → client → ESP32)
-- [x] Integration tests (157 total)
+- [x] Integration tests (159 total)
 - [x] CLI tool packaging (pip-installable `chromacatch-client`)
 - [x] Backend live dashboard with MJPEG frame streaming
 - [x] HID mouse test script
@@ -166,7 +166,7 @@ ChromaCatch-Go/
 # Install
 poetry install
 
-# Run all tests (157 tests)
+# Run all tests (159 tests)
 poetry run pytest
 
 # Run by suite
@@ -210,11 +210,13 @@ CC_CLIENT_ESP32_PORT=80
 CC_CLIENT_AIRPLAY_UDP_PORT=5000
 CC_CLIENT_AIRPLAY_AUDIO_UDP_PORT=5002
 CC_CLIENT_AIRPLAY_NAME=ChromaCatch
+CC_CLIENT_CLEANUP_STALE_AIRPLAY_PROCESSES=true
 CC_CLIENT_CAPTURE_SOURCE=airplay            # airplay | capture | screen
 CC_CLIENT_CAPTURE_DEVICE=0                  # device index/path for capture source
 CC_CLIENT_CAPTURE_FPS=30
 CC_CLIENT_SCREEN_MONITOR=1                  # used by screen source
 CC_CLIENT_SCREEN_REGION=                    # optional x,y,width,height
+CC_CLIENT_AIRPLAY_RECONNECT_TIMEOUT_S=8.0  # restart capture if stream stalls post-connect
 CC_CLIENT_JPEG_QUALITY=65
 CC_CLIENT_MAX_DIMENSION=720
 CC_CLIENT_FRAME_INTERVAL_MS=33
