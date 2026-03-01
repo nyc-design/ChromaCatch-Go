@@ -14,6 +14,7 @@ import time
 
 from airplay_client.audio.base import AudioSource
 from airplay_client.audio.factory import create_audio_source
+from airplay_client.capture.h264_capture import H264Capture
 from airplay_client.capture.process_cleanup import cleanup_stale_airplay_processes
 from airplay_client.commander.esp32_client import ESP32Client
 from airplay_client.config import client_settings
@@ -47,20 +48,27 @@ class ChromaCatchClient:
             name="control",
         )
 
-        # Media transport: SRT (low-latency) or WebSocket (fallback)
-        # Frame WS is needed for "websocket" and "srt-failover" modes
+        # Media transport: SRT, H.264-WS, or legacy WebSocket
+        # Frame WS is needed for "websocket", "srt-failover", and "h264-ws" modes
         self._frame_ws: WebSocketClient | None = None
-        if client_settings.transport_mode in ("websocket", "srt-failover"):
+        if client_settings.transport_mode in ("websocket", "srt-failover", "h264-ws"):
             self._frame_ws = WebSocketClient(
                 on_hid_command=self._forwarder.handle_command,
                 on_config_update=self._handle_config_update,
                 backend_ws_url=client_settings.backend_ws_url,
                 name="frame",
             )
+
+        # H.264 capture is only needed for h264-ws mode
+        self._h264_capture: H264Capture | None = None
+        if client_settings.transport_mode == "h264-ws":
+            self._h264_capture = H264Capture()
+
         self._transport: MediaTransport = create_media_transport(
             frame_source=self._frame_source,
             audio_source=self._audio_source,
             frame_ws=self._frame_ws,
+            h264_capture=self._h264_capture,
         )
 
         self._start_time = time.time()
@@ -171,17 +179,28 @@ class ChromaCatchClient:
                 audio_port=client_settings.airplay_audio_udp_port,
             )
 
-        # In SRT mode, GStreamer reads directly from RTP — no Python frame
-        # capture is needed.  But UxPlay must still run so the iPhone can
-        # discover and connect via AirPlay.
-        if client_settings.transport_mode == "srt":
+        # In SRT and H.264-WS modes, GStreamer reads directly from RTP — no
+        # Python frame decode is needed.  But UxPlay must still run so the
+        # iPhone can discover and connect via AirPlay.
+        if client_settings.transport_mode in ("srt", "h264-ws"):
             if isinstance(self._frame_source, AirPlayFrameSource):
-                logger.info("SRT mode: starting AirPlay receiver (UxPlay) only")
+                logger.info(
+                    "%s mode: starting AirPlay receiver (UxPlay) only",
+                    client_settings.transport_mode,
+                )
                 self._frame_source._airplay.start()
             else:
-                logger.info("SRT mode: non-AirPlay source, no UxPlay needed")
+                logger.info(
+                    "%s mode: non-AirPlay source, no UxPlay needed",
+                    client_settings.transport_mode,
+                )
+            # H.264-WS also needs the H264Capture pipeline running
+            if self._h264_capture is not None:
+                if self._audio_source is not None:
+                    self._audio_source.start()
+                self._h264_capture.start()
         else:
-            # WS and failover modes need the full frame source + audio source.
+            # Legacy WS and failover modes need the full frame source + audio source.
             if self._audio_source is not None:
                 self._audio_source.start()
             self._frame_source.start()
@@ -199,7 +218,9 @@ class ChromaCatchClient:
         await self._control_ws.disconnect()
         if self._audio_source is not None:
             self._audio_source.stop()
-        if client_settings.transport_mode == "srt":
+        if self._h264_capture is not None:
+            self._h264_capture.stop()
+        if client_settings.transport_mode in ("srt", "h264-ws"):
             if isinstance(self._frame_source, AirPlayFrameSource):
                 self._frame_source._airplay.stop()
         else:

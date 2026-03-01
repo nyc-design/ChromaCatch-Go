@@ -61,7 +61,8 @@ class ClientSettings(BaseSettings):
     audio_input_backend: str = "auto"  # auto | avfoundation | pulse | dshow
     audio_input_device: str = ""  # backend-specific input selector
 
-    # Transport mode: "srt" for low-latency SRT transport, "websocket" for legacy WS/JPEG
+    # Transport mode: "srt" | "srt-failover" | "h264-ws" | "websocket"
+    # h264-ws: H.264 passthrough over WebSocket (Cloud Run compatible, near-SRT efficiency)
     transport_mode: str = "websocket"  # default to websocket until SRT backend is configured
 
     # SRT transport settings (used when transport_mode="srt")

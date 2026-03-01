@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from backend.main import app, session_manager
 from shared.frame_codec import encode_frame
-from shared.messages import AudioChunk, ClientStatus, CommandAck, FrameMetadata, HeartbeatPing
+from shared.messages import AudioChunk, ClientStatus, CommandAck, FrameMetadata, H264FrameMetadata, HeartbeatPing
 
 
 class TestWebSocketConnection:
@@ -154,6 +154,62 @@ class TestWebSocketConnection:
             assert session is not None
             assert session.audio_chunks_received == 1
             assert session.latest_audio_chunk == raw_audio
+
+    def test_websocket_send_h264_frame(self):
+        """Test H.264 Access Unit received and decoded by backend."""
+        # Generate a minimal valid H.264 keyframe
+        import av
+        from fractions import Fraction
+
+        codec = av.CodecContext.create("h264", "w")
+        codec.width = 64
+        codec.height = 64
+        codec.pix_fmt = "yuv420p"
+        codec.time_base = Fraction(1, 30)
+        codec.options = {"preset": "ultrafast", "tune": "zerolatency"}
+        codec.open()
+
+        frame = av.VideoFrame(64, 64, "yuv420p")
+        for i, plane in enumerate(frame.planes):
+            if i == 0:
+                plane.update(bytes(plane.buffer_size))
+            else:
+                plane.update(bytes([128]) * plane.buffer_size)
+        frame.pts = 0
+
+        packets = codec.encode(frame)
+        packets += codec.encode(None)
+        h264_data = b""
+        for pkt in packets:
+            h264_data += bytes(pkt)
+
+        client = TestClient(app)
+        with client.websocket_connect("/ws/client") as ws:
+            ws.send_text(HeartbeatPing().model_dump_json())
+            ws.receive_text()
+
+            metadata = H264FrameMetadata(
+                sequence=1,
+                is_keyframe=True,
+                capture_timestamp=1000.0,
+                byte_length=len(h264_data),
+            )
+            ws.send_text(metadata.model_dump_json())
+            ws.send_bytes(h264_data)
+
+            # Flush processing
+            ws.send_text(HeartbeatPing().model_dump_json())
+            ws.receive_text()
+
+            client_id = session_manager.connected_clients[0]
+            session = session_manager.get_session(client_id)
+            assert session is not None
+            assert session.frames_received == 1
+            assert session.latest_frame is not None
+            assert session.latest_frame.shape == (64, 64, 3)
+            # Dashboard JPEG should also be generated
+            assert session.latest_frame_jpeg is not None
+            assert len(session.latest_frame_jpeg) > 0
 
     def test_websocket_control_channel_receives_ack(self):
         client = TestClient(app)

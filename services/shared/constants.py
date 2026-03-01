@@ -37,6 +37,7 @@ class MessageType:
 
     # Client -> Backend
     FRAME = "frame"
+    H264_FRAME = "h264_frame"
     AUDIO_CHUNK = "audio_chunk"
     CLIENT_STATUS = "client_status"
 

@@ -4,9 +4,11 @@ import logging
 import time
 import uuid
 
+import cv2
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.config import backend_settings
+from backend.h264_decoder import H264Decoder
 from backend.session_manager import ChannelType, ClientSession, SessionManager
 from shared.frame_codec import decode_frame
 from shared.messages import (
@@ -14,6 +16,7 @@ from shared.messages import (
     ClientStatus,
     CommandAck,
     FrameMetadata,
+    H264FrameMetadata,
     HeartbeatPing,
     HeartbeatPong,
     parse_message,
@@ -27,6 +30,13 @@ class WebSocketHandler:
 
     def __init__(self, session_manager: SessionManager) -> None:
         self._session_manager = session_manager
+        self._h264_decoders: dict[str, H264Decoder] = {}
+
+    def _get_decoder(self, client_id: str) -> H264Decoder:
+        """Get or create an H.264 decoder for a client."""
+        if client_id not in self._h264_decoders:
+            self._h264_decoders[client_id] = H264Decoder()
+        return self._h264_decoders[client_id]
 
     async def handle_connection(
         self,
@@ -60,6 +70,8 @@ class WebSocketHandler:
             logger.error("Client %s error (channel=%s): %s", resolved_client_id, channel, e)
         finally:
             await self._session_manager.unregister(resolved_client_id, channel=channel)
+            if channel == "frame":
+                self._h264_decoders.pop(resolved_client_id, None)
 
     async def _frame_message_loop(
         self,
@@ -69,6 +81,7 @@ class WebSocketHandler:
     ) -> None:
         """Process incoming frame-channel messages from the client."""
         expecting_frame_data: FrameMetadata | None = None
+        expecting_h264_data: H264FrameMetadata | None = None
         expecting_audio_data: AudioChunk | None = None
 
         while True:
@@ -84,11 +97,18 @@ class WebSocketHandler:
 
                 if isinstance(msg, FrameMetadata):
                     expecting_frame_data = msg
+                    expecting_h264_data = None
+                    expecting_audio_data = None
+
+                elif isinstance(msg, H264FrameMetadata):
+                    expecting_h264_data = msg
+                    expecting_frame_data = None
                     expecting_audio_data = None
 
                 elif isinstance(msg, AudioChunk):
                     expecting_audio_data = msg
                     expecting_frame_data = None
+                    expecting_h264_data = None
 
                 elif isinstance(msg, ClientStatus):
                     session.last_status = msg
@@ -109,24 +129,19 @@ class WebSocketHandler:
                     logger.debug("Unhandled message type from %s: %s", client_id, msg.type)
 
             elif "bytes" in message:
-                jpeg_bytes = message["bytes"]
+                binary_data = message["bytes"]
 
-                if expecting_frame_data is None:
-                    if expecting_audio_data is None:
-                        logger.warning(
-                            "Received binary data without media metadata from %s",
-                            client_id,
-                        )
-                        continue
-                    if len(jpeg_bytes) > backend_settings.max_audio_bytes:
+                # --- Audio chunk ---
+                if expecting_audio_data is not None:
+                    if len(binary_data) > backend_settings.max_audio_bytes:
                         logger.warning(
                             "Audio chunk too large from %s: %d bytes",
                             client_id,
-                            len(jpeg_bytes),
+                            len(binary_data),
                         )
                         expecting_audio_data = None
                         continue
-                    session.latest_audio_chunk = jpeg_bytes
+                    session.latest_audio_chunk = binary_data
                     session.latest_audio_sequence = expecting_audio_data.sequence
                     session.latest_audio_sample_rate = expecting_audio_data.sample_rate
                     session.latest_audio_channels = expecting_audio_data.channels
@@ -136,46 +151,118 @@ class WebSocketHandler:
                     expecting_audio_data = None
                     continue
 
-                if len(jpeg_bytes) > backend_settings.max_frame_bytes:
-                    logger.warning(
-                        "Frame too large from %s: %d bytes", client_id, len(jpeg_bytes)
-                    )
+                # --- H.264 Access Unit ---
+                if expecting_h264_data is not None:
+                    if len(binary_data) > backend_settings.max_frame_bytes:
+                        logger.warning(
+                            "H.264 AU too large from %s: %d bytes",
+                            client_id,
+                            len(binary_data),
+                        )
+                        expecting_h264_data = None
+                        continue
+
+                    try:
+                        decoder = self._get_decoder(client_id)
+                        frame = decoder.decode(binary_data)
+                        if frame is not None:
+                            _, jpeg_buf = cv2.imencode(
+                                ".jpg",
+                                frame,
+                                [cv2.IMWRITE_JPEG_QUALITY, 80],
+                            )
+                            session.latest_frame = frame
+                            session.latest_frame_jpeg = jpeg_buf.tobytes()
+                            session.latest_frame_sequence = (
+                                expecting_h264_data.sequence
+                            )
+                            session.frames_received += 1
+                            session.last_frame_at = time.time()
+
+                            latency_ms = (
+                                time.time()
+                                - expecting_h264_data.capture_timestamp
+                            ) * 1000
+                            transport_latency_ms = None
+                            if expecting_h264_data.sent_timestamp is not None:
+                                transport_latency_ms = (
+                                    time.time()
+                                    - expecting_h264_data.sent_timestamp
+                                ) * 1000
+                            logger.debug(
+                                "H264 #%d from %s: %dx%d, kf=%s, latency=%.0fms, transport=%s",
+                                expecting_h264_data.sequence,
+                                client_id,
+                                frame.shape[1],
+                                frame.shape[0],
+                                expecting_h264_data.is_keyframe,
+                                latency_ms,
+                                (
+                                    f"{transport_latency_ms:.0f}ms"
+                                    if transport_latency_ms is not None
+                                    else "n/a"
+                                ),
+                            )
+                    except Exception as e:
+                        logger.error(
+                            "Failed to decode H.264 from %s: %s", client_id, e
+                        )
+
+                    expecting_h264_data = None
+                    continue
+
+                # --- JPEG frame ---
+                if expecting_frame_data is not None:
+                    if len(binary_data) > backend_settings.max_frame_bytes:
+                        logger.warning(
+                            "Frame too large from %s: %d bytes",
+                            client_id,
+                            len(binary_data),
+                        )
+                        expecting_frame_data = None
+                        continue
+
+                    try:
+                        frame = decode_frame(binary_data)
+                        session.latest_frame = frame
+                        session.latest_frame_jpeg = binary_data
+                        session.latest_frame_sequence = expecting_frame_data.sequence
+                        session.frames_received += 1
+                        session.last_frame_at = time.time()
+
+                        latency_ms = (
+                            time.time() - expecting_frame_data.capture_timestamp
+                        ) * 1000
+                        transport_latency_ms = None
+                        if expecting_frame_data.sent_timestamp is not None:
+                            transport_latency_ms = (
+                                time.time() - expecting_frame_data.sent_timestamp
+                            ) * 1000
+                        logger.debug(
+                            "Frame #%d from %s: %dx%d, latency=%.0fms, transport=%s",
+                            expecting_frame_data.sequence,
+                            client_id,
+                            frame.shape[1],
+                            frame.shape[0],
+                            latency_ms,
+                            (
+                                f"{transport_latency_ms:.0f}ms"
+                                if transport_latency_ms is not None
+                                else "n/a"
+                            ),
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "Failed to decode frame from %s: %s", client_id, e
+                        )
+
                     expecting_frame_data = None
                     continue
 
-                try:
-                    frame = decode_frame(jpeg_bytes)
-                    session.latest_frame = frame
-                    session.latest_frame_jpeg = jpeg_bytes
-                    session.latest_frame_sequence = expecting_frame_data.sequence
-                    session.frames_received += 1
-                    session.last_frame_at = time.time()
-
-                    latency_ms = (
-                        time.time() - expecting_frame_data.capture_timestamp
-                    ) * 1000
-                    transport_latency_ms = None
-                    if expecting_frame_data.sent_timestamp is not None:
-                        transport_latency_ms = (
-                            time.time() - expecting_frame_data.sent_timestamp
-                        ) * 1000
-                    logger.debug(
-                        "Frame #%d from %s: %dx%d, latency=%.0fms, transport=%s",
-                        expecting_frame_data.sequence,
-                        client_id,
-                        frame.shape[1],
-                        frame.shape[0],
-                        latency_ms,
-                        (
-                            f"{transport_latency_ms:.0f}ms"
-                            if transport_latency_ms is not None
-                            else "n/a"
-                        ),
-                    )
-                except Exception as e:
-                    logger.error("Failed to decode frame from %s: %s", client_id, e)
-
-                expecting_frame_data = None
+                logger.warning(
+                    "Received binary data without media metadata from %s",
+                    client_id,
+                )
 
     async def _control_message_loop(self, client_id: str, websocket: WebSocket) -> None:
         """Process incoming control-channel messages from the client."""

@@ -11,9 +11,11 @@ from shared.messages import (
     ConfigUpdate,
     ErrorMessage,
     FrameMetadata,
+    H264FrameMetadata,
     HeartbeatPing,
     HeartbeatPong,
     HIDCommandMessage,
+    parse_message,
 )
 
 
@@ -227,6 +229,58 @@ class TestErrorMessage:
         msg = ErrorMessage(code="FRAME_TOO_LARGE", detail="500KB limit exceeded")
         parsed = ErrorMessage.model_validate_json(msg.model_dump_json())
         assert parsed.code == "FRAME_TOO_LARGE"
+
+
+class TestH264FrameMetadata:
+    def test_creation(self):
+        msg = H264FrameMetadata(
+            sequence=1,
+            is_keyframe=True,
+            capture_timestamp=1000.0,
+            byte_length=32000,
+        )
+        assert msg.type == MessageType.H264_FRAME
+        assert msg.sequence == 1
+        assert msg.is_keyframe is True
+        assert msg.byte_length == 32000
+
+    def test_defaults(self):
+        msg = H264FrameMetadata(
+            sequence=1, capture_timestamp=1000.0, byte_length=100
+        )
+        assert msg.is_keyframe is False
+        assert msg.sent_timestamp is None
+
+    def test_roundtrip_json(self):
+        msg = H264FrameMetadata(
+            sequence=42,
+            is_keyframe=True,
+            capture_timestamp=1234.5,
+            sent_timestamp=1234.6,
+            byte_length=50000,
+        )
+        parsed = H264FrameMetadata.model_validate_json(msg.model_dump_json())
+        assert parsed.sequence == 42
+        assert parsed.is_keyframe is True
+        assert parsed.capture_timestamp == 1234.5
+        assert parsed.sent_timestamp == 1234.6
+
+    def test_type_field_from_json(self):
+        raw = H264FrameMetadata(
+            sequence=1, capture_timestamp=0, byte_length=100
+        ).model_dump_json()
+        import json
+        data = json.loads(raw)
+        assert data["type"] == "h264_frame"
+
+    def test_parse_message_dispatch(self):
+        msg = H264FrameMetadata(
+            sequence=5, is_keyframe=True, capture_timestamp=1.0, byte_length=500
+        )
+        parsed = parse_message(msg.model_dump_json())
+        assert isinstance(parsed, H264FrameMetadata)
+        assert parsed.sequence == 5
+        assert parsed.is_keyframe is True
 
 
 class TestCommandAck:

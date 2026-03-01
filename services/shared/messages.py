@@ -38,6 +38,17 @@ class FrameMetadata(BaseMessage):
     byte_length: int
 
 
+class H264FrameMetadata(BaseMessage):
+    """Metadata sent before a binary H.264 Access Unit."""
+
+    type: str = MessageType.H264_FRAME
+    sequence: int
+    is_keyframe: bool = False
+    capture_timestamp: float
+    sent_timestamp: float | None = None
+    byte_length: int
+
+
 class AudioChunk(BaseMessage):
     """Metadata sent before a binary PCM audio chunk."""
 
@@ -138,6 +149,7 @@ class ErrorMessage(BaseMessage):
 
 _TYPE_MAP: dict[str, type[BaseMessage]] = {
     MessageType.FRAME: FrameMetadata,
+    MessageType.H264_FRAME: H264FrameMetadata,
     MessageType.AUDIO_CHUNK: AudioChunk,
     MessageType.CLIENT_STATUS: ClientStatus,
     MessageType.HID_COMMAND: HIDCommandMessage,

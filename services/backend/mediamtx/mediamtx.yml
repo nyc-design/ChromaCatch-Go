@@ -5,6 +5,10 @@
 logLevel: info
 logDestinations: [stdout]
 
+# --- API for debugging ---
+api: yes
+apiAddress: :9997
+
 # --- SRT listener for client ingest ---
 srt: yes
 srtAddress: :8890

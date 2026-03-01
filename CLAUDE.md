@@ -30,14 +30,21 @@ Automated shiny hunting bot for Pokemon Go using AirPlay screen mirroring, compu
 
 ### Media Transport Modes
 
-The client supports two transport modes for video/audio delivery, configurable via `CC_CLIENT_TRANSPORT_MODE`:
+The client supports three transport modes for video/audio delivery, configurable via `CC_CLIENT_TRANSPORT_MODE`:
 
-**SRT Mode** (`transport_mode=srt`) — Low-latency, recommended:
+**SRT Mode** (`transport_mode=srt`) — Low-latency, recommended for UDP-capable hosts:
 1. UxPlay decrypts AirPlay H.264 stream → RTP over localhost UDP
 2. GStreamer subprocess forwards H.264 passthrough + Opus-encoded audio via SRT to MediaMTX
 3. MediaMTX receives SRT, serves as RTSP (for CV pipeline) and WebRTC/WHEP (for dashboard)
 4. Backend RTSP consumer reads frames from MediaMTX, feeds into CV pipeline
 5. No decode/re-encode on client — Python never touches frame data
+
+**H.264 WebSocket Mode** (`transport_mode=h264-ws`) — Cloud Run compatible, near-SRT efficiency:
+1. UxPlay decrypts AirPlay H.264 stream → RTP over localhost UDP
+2. GStreamer depayloads/parses H.264 → raw Annex B AUs piped to stdout (no decode/re-encode)
+3. Client sends H.264 AUs directly over WebSocket (metadata + binary, ~10x smaller than JPEG)
+4. Backend decodes H.264 using PyAV (FFmpeg), JPEG-encodes for dashboard
+5. Works over TCP/HTTPS — compatible with Cloud Run, Fly.io, any HTTP-only platform
 
 **WebSocket Mode** (`transport_mode=websocket`) — Fallback for low-power devices:
 1. UxPlay decrypts H.264 → GStreamer captures frames (pipe or file backend)
@@ -51,7 +58,7 @@ The client supports two transport modes for video/audio delivery, configurable v
 4. ESP32 emits BLE HID mouse event to iPhone
 
 ### WebSocket Protocol
-- **Frames (client → backend)**: Two-message pattern — JSON `FrameMetadata` followed by binary JPEG bytes
+- **Frames (client → backend)**: Two-message pattern — JSON `FrameMetadata` followed by binary JPEG bytes (WS mode) or JSON `H264FrameMetadata` followed by binary H.264 AU bytes (h264-ws mode)
 - **Commands (backend → client)**: JSON `HIDCommandMessage` with action + params (+ command id/sequence)
 - **Command ACKs (client → backend)**: JSON `CommandAck` after ESP32 forward attempt
 - **Audio (client → backend)**: JSON `AudioChunk` metadata + binary PCM payload
@@ -77,6 +84,7 @@ ChromaCatch-Go/
 │   │   ├── config.py                        # BackendSettings (CC_BACKEND_ prefix)
 │   │   ├── main.py                          # FastAPI + WS endpoints + dashboard
 │   │   ├── ws_handler.py                    # WebSocket frame/control handler
+│   │   ├── h264_decoder.py                  # Streaming H.264 decoder (PyAV/FFmpeg)
 │   │   ├── session_manager.py               # Dual-channel client session tracking
 │   │   ├── mediamtx_manager.py              # MediaMTX subprocess lifecycle
 │   │   ├── rtsp_consumer.py                 # RTSP frame consumer (reads from MediaMTX for CV)
@@ -88,6 +96,7 @@ ChromaCatch-Go/
 │   │       ├── test_backend_api.py
 │   │       ├── test_session_manager.py
 │   │       ├── test_ws_handler.py
+│   │       ├── test_h264_decoder.py         # H264Decoder (PyAV) tests
 │   │       ├── test_mediamtx_manager.py
 │   │       ├── test_rtsp_consumer.py
 │   │       ├── test_messages.py             # Shared protocol tests
@@ -103,8 +112,9 @@ ChromaCatch-Go/
 │   │   │   │   ├── base.py                  # MediaTransport ABC
 │   │   │   │   ├── srt_transport.py         # SRT publisher (GStreamer→srtsink) + stats
 │   │   │   │   ├── ws_transport.py          # WebSocket transport (JPEG frames + PCM)
+│   │   │   │   ├── h264_ws_transport.py     # H.264 passthrough WS transport (raw AUs + PCM)
 │   │   │   │   ├── failover_transport.py    # SRT→WS auto-failover with recovery
-│   │   │   │   └── factory.py               # Transport factory (srt | srt-failover | websocket)
+│   │   │   │   └── factory.py               # Transport factory (srt | srt-failover | h264-ws | websocket)
 │   │   │   ├── audio/
 │   │   │   │   ├── factory.py               # Runtime audio source selection
 │   │   │   │   ├── airplay_audio_source.py  # AirPlay RTP audio source adapter
@@ -114,6 +124,7 @@ ChromaCatch-Go/
 │   │   │   ├── capture/
 │   │   │   │   ├── airplay_manager.py       # UxPlay process management
 │   │   │   │   ├── frame_capture.py         # OpenCV GStreamer/FFmpeg frame capture
+│   │   │   │   ├── h264_capture.py          # H.264 AU capture from GStreamer pipe (no decode)
 │   │   │   │   └── audio_capture.py         # AirPlay RTP audio capture (PCM chunks)
 │   │   │   ├── sources/
 │   │   │   │   ├── airplay_source.py        # AirPlay/UxPlay source adapter
@@ -127,6 +138,8 @@ ChromaCatch-Go/
 │   │       ├── test_esp32_client.py
 │   │       ├── test_esp32_forwarder.py
 │   │       ├── test_frame_capture.py
+│   │       ├── test_h264_capture.py         # H264AUParser + keyframe detection tests
+│   │       ├── test_h264_transport.py       # H264WebSocketTransport + factory tests
 │   │       ├── test_transport.py            # SRT + WS transport + factory tests
 │   │       ├── test_ws_client.py
 │   │       └── test_cli.py
@@ -146,6 +159,7 @@ ChromaCatch-Go/
 |-------|-----------|
 | Backend | Python 3.11+, FastAPI, uvicorn, pydantic |
 | Media transport (primary) | SRT via GStreamer srtsink → MediaMTX → RTSP |
+| Media transport (Cloud Run) | H.264 passthrough over WebSocket (h264-ws) |
 | Media transport (fallback) | WebSocket (websockets library, JPEG + PCM) |
 | Media router | MediaMTX (SRT ingest, RTSP local, WebRTC/WHEP dashboard) |
 | CV | OpenCV (with GStreamer support), numpy |
@@ -156,7 +170,8 @@ ChromaCatch-Go/
 | ESP32 firmware | C++ / Arduino / PlatformIO |
 | ESP32 comms | WiFi HTTP (REST, keep-alive) |
 | BLE HID | ESP32 BLE HID library (BleCombo) |
-| Testing | pytest, pytest-asyncio (226 tests) |
+| H.264 decode | PyAV (av) — FFmpeg wrapper for backend H.264→BGR decode |
+| Testing | pytest, pytest-asyncio (260 tests) |
 | Linting | ruff, black, mypy |
 
 ## Phases
@@ -192,7 +207,10 @@ ChromaCatch-Go/
 - [x] Dashboard WebRTC/WHEP support with audio playback (+ MJPEG fallback)
 - [x] Dashboard SRT stats + frame latency display
 - [x] Client main.py refactored for transport mode selection
-- [x] 226 tests passing (61 new transport + failover + MediaMTX + RTSP tests)
+- [x] H.264 passthrough WebSocket transport (`H264WebSocketTransport` — raw H.264 AUs over WS, Cloud Run compatible)
+- [x] H264Capture (GStreamer pipe: udpsrc → rtph264depay → h264parse → fdsink, AU boundary/keyframe detection)
+- [x] H264Decoder (backend PyAV/FFmpeg streaming H.264 → BGR decode)
+- [x] 260 tests passing (95 new transport + failover + MediaMTX + RTSP + H.264 tests)
 
 ### Phase 2: Computer Vision
 - [ ] Screen state detection (battle, overworld, menu, etc.)
@@ -212,7 +230,7 @@ ChromaCatch-Go/
 # Install
 poetry install
 
-# Run all tests (226 tests)
+# Run all tests (260 tests)
 poetry run pytest
 
 # Run by suite
@@ -278,7 +296,7 @@ CC_CLIENT_AUDIO_CHUNK_MS=100
 CC_CLIENT_AUDIO_INPUT_BACKEND=auto          # auto | avfoundation | pulse | dshow
 CC_CLIENT_AUDIO_INPUT_DEVICE=               # backend-specific input selector
 # Transport settings
-CC_CLIENT_TRANSPORT_MODE=websocket          # websocket | srt | srt-failover
+CC_CLIENT_TRANSPORT_MODE=websocket          # websocket | h264-ws | srt | srt-failover
 CC_CLIENT_SRT_BACKEND_URL=                  # srt://host:8890 (auto-derived from WS URL if empty)
 CC_CLIENT_SRT_LATENCY_MS=50                 # SRT latency buffer
 CC_CLIENT_SRT_PASSPHRASE=                   # optional SRT encryption

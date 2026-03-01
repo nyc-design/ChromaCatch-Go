@@ -26,6 +26,7 @@ from shared.messages import (
     CommandAck,
     ConfigUpdate,
     FrameMetadata,
+    H264FrameMetadata,
     HIDCommandMessage,
     HeartbeatPong,
     parse_message,
@@ -187,6 +188,38 @@ class WebSocketClient:
             try:
                 await self._ws.send(metadata.model_dump_json())
                 await self._ws.send(jpeg_bytes)
+            except websockets.ConnectionClosed:
+                self._connected = False
+
+    async def send_h264_au(
+        self,
+        au_bytes: bytes,
+        is_keyframe: bool,
+        capture_timestamp: float | None = None,
+    ) -> None:
+        """Send an H.264 Access Unit (metadata + binary H.264).
+
+        Sends two WebSocket messages:
+        1. JSON metadata (H264FrameMetadata)
+        2. Binary H.264 AU bytes
+        """
+        if not self.is_connected:
+            return
+
+        ts = capture_timestamp or time.time()
+        self._frame_sequence += 1
+        metadata = H264FrameMetadata(
+            sequence=self._frame_sequence,
+            is_keyframe=is_keyframe,
+            capture_timestamp=ts,
+            sent_timestamp=time.time(),
+            byte_length=len(au_bytes),
+        )
+
+        async with self._send_lock:
+            try:
+                await self._ws.send(metadata.model_dump_json())
+                await self._ws.send(au_bytes)
             except websockets.ConnectionClosed:
                 self._connected = False
 
