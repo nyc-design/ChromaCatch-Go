@@ -80,11 +80,19 @@ class WebSocketClient:
                 extra_headers = make_auth_headers(client_settings.api_key)
                 connect_url = self._build_connect_url()
 
+                ssl_ctx = None
+                if connect_url.startswith("wss://") and not client_settings.ws_ssl_verify:
+                    import ssl
+                    ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                    ssl_ctx.check_hostname = False
+                    ssl_ctx.verify_mode = ssl.CERT_NONE
+
                 self._ws = await websockets.connect(
                     connect_url,
                     additional_headers=extra_headers,
                     ping_interval=client_settings.ws_heartbeat_interval,
                     ping_timeout=20,
+                    ssl=ssl_ctx,
                 )
                 self._connected = True
                 delay = client_settings.ws_reconnect_delay

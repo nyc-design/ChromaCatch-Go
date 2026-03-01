@@ -75,6 +75,7 @@ class ClientSettings(BaseSettings):
     ws_reconnect_delay: float = 1.0
     ws_reconnect_max_delay: float = 30.0
     ws_heartbeat_interval: float = 10.0
+    ws_ssl_verify: bool = True  # set False to skip SSL cert verification
 
     # Process lifecycle
     single_instance_lock_path: str = tempfile.gettempdir()
