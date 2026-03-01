@@ -20,7 +20,6 @@ class ESP32HTTPClient: ObservableObject {
 
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 2.0
-        config.httpShouldSetPipeline = true
         // Keep-alive for low-latency repeated commands
         config.httpShouldUsePipelining = true
         self.session = URLSession(configuration: config)
