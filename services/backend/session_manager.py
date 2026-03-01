@@ -43,6 +43,7 @@ class ClientSession:
     commands_sent: int = 0
     commands_acked: int = 0
     last_command_rtt_ms: float | None = None
+    last_frame_latency_ms: float | None = None
 
     @property
     def websocket(self) -> WebSocket | None:
@@ -175,6 +176,30 @@ class SessionManager:
         if session is None:
             return None, 0
         return session.latest_frame_jpeg, session.latest_frame_sequence
+
+    def update_frame(
+        self,
+        client_id: str,
+        frame: np.ndarray,
+        jpeg_bytes: bytes,
+        capture_timestamp: float | None = None,
+    ) -> None:
+        """Update a client's latest frame (used by both WS handler and RTSP consumer)."""
+        session = self._sessions.get(client_id)
+        if session is None:
+            # Auto-create session for RTSP-only clients (no WS frame channel)
+            session = ClientSession()
+            self._sessions[client_id] = session
+            logger.info("Client session created via RTSP: %s", client_id)
+
+        session.latest_frame = frame
+        session.latest_frame_jpeg = jpeg_bytes
+        session.latest_frame_sequence += 1
+        session.frames_received += 1
+        now = time.time()
+        session.last_frame_at = capture_timestamp or now
+        if capture_timestamp is not None:
+            session.last_frame_latency_ms = max(0.0, (now - capture_timestamp) * 1000)
 
     def mark_command_ack(self, client_id: str, ack: CommandAck) -> None:
         session = self._sessions.get(client_id)

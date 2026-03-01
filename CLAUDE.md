@@ -5,15 +5,17 @@ Automated shiny hunting bot for Pokemon Go using AirPlay screen mirroring, compu
 ## Architecture Overview
 
 ```
- [Local Network]                                    [Cloud / Remote]
-┌──────────┐  AirPlay   ┌──────────────────────┐        ┌───────────────────┐
-│  iPhone   │ ────────► │   Local Client        │        │  Remote Backend   │
-│(Pkmn Go)  │           │                      │  WS    │                   │
-└──────────┘           │  UxPlay → FrameCapture ├──────►│  FastAPI + CV     │
-      ▲                 │                      │ frames │                   │
-      │ BLE HID         │  ESP32Forwarder ◄────┤◄──────┤  Orchestrator     │
-      │                 └──────────┬───────────┘  cmds  └───────────────────┘
-      │                            │ HTTP
+ [Local Network]                                     [Cloud / Remote]
+┌──────────┐  AirPlay   ┌──────────────────────┐        ┌───────────────────────┐
+│  iPhone   │ ────────► │   Local Client        │        │  Remote Backend       │
+│(Pkmn Go)  │           │                      │  SRT   │                       │
+└──────────┘           │  UxPlay ─── H.264 ────┼──────►│  MediaMTX (SRT→RTSP)  │
+      ▲                 │  (RTP)    passthru    │  or   │       │               │
+      │ BLE HID         │           + Opus audio│  WS   │  RTSP consumer → CV   │
+      │                 │                      │ (JPEG) │       │               │
+      │                 │  ESP32Forwarder ◄────┤◄──────┤  Orchestrator          │
+      │                 └──────────┬───────────┘  cmds  └───────────────────────┘
+      │                            │ HTTP            (WS control channel always)
 ┌─────┴──────┐◄────────────────────┘
 │   ESP32    │
 │ (BLE HID)  │
@@ -21,20 +23,32 @@ Automated shiny hunting bot for Pokemon Go using AirPlay screen mirroring, compu
 ```
 
 ### Two-Service Architecture
-- **Airplay Client** (`services/airplay-client/`): Runs on the same network as iPhone + ESP32. Manages AirPlay reception, captures frames, forwards them over WebSocket to the backend, and relays HID commands from the backend to the ESP32. Deployed as a CLI tool.
-- **Remote Backend** (`services/backend/`): Runs in the cloud (Cloud Run, VM, etc.). Receives frames, runs CV analysis, makes decisions, and sends HID commands back through the WebSocket.
+- **Airplay Client** (`services/airplay-client/`): Runs on the same network as iPhone + ESP32. Manages AirPlay reception, delivers media to the backend (via SRT or WebSocket), and relays HID commands from the backend to the ESP32. Deployed as a CLI tool.
+- **Remote Backend** (`services/backend/`): Runs in the cloud (Cloud Run, VM, etc.). Receives frames (via RTSP from MediaMTX or WebSocket), runs CV analysis, makes decisions, and sends HID commands back through WebSocket.
 - **ESP32 Firmware** (`services/esp32/`): Dumb HID device. Receives mouse commands over HTTP, emits BLE HID events.
 - **Shared** (`services/shared/`): Protocol contract between services — message models, frame codec, constants.
 
-### Data Flow
+### Media Transport Modes
+
+The client supports two transport modes for video/audio delivery, configurable via `CC_CLIENT_TRANSPORT_MODE`:
+
+**SRT Mode** (`transport_mode=srt`) — Low-latency, recommended:
+1. UxPlay decrypts AirPlay H.264 stream → RTP over localhost UDP
+2. GStreamer subprocess forwards H.264 passthrough + Opus-encoded audio via SRT to MediaMTX
+3. MediaMTX receives SRT, serves as RTSP (for CV pipeline) and WebRTC/WHEP (for dashboard)
+4. Backend RTSP consumer reads frames from MediaMTX, feeds into CV pipeline
+5. No decode/re-encode on client — Python never touches frame data
+
+**WebSocket Mode** (`transport_mode=websocket`) — Fallback for low-power devices:
+1. UxPlay decrypts H.264 → GStreamer captures frames (pipe or file backend)
+2. Client JPEG-encodes frames (720px, q65), sends over WebSocket with PCM audio
+3. Backend decodes frames directly from WebSocket
+
+### Data Flow (Common)
 1. iPhone runs Pokemon Go, screen mirrors via AirPlay to UxPlay (on local client)
-2. UxPlay decrypts H.264 stream, forwards as RTP over localhost UDP
-3. Local client captures frames via a unified source layer (`airplay` / `capture` / `screen`), JPEG-encodes (720px, q65 default), sends over WebSocket
-4. Local client captures audio via a unified audio layer (`auto` / `airplay` / `system`), sends PCM chunks over WebSocket
-5. Remote backend decodes frames, runs CV pipeline, decides next action
-6. Backend sends HID command over WebSocket to local client
-7. Local client forwards command to ESP32 via HTTP
-8. ESP32 emits BLE HID mouse event to iPhone
+2. Backend sends HID commands over WebSocket control channel to local client
+3. Local client forwards command to ESP32 via HTTP (keep-alive connections)
+4. ESP32 emits BLE HID mouse event to iPhone
 
 ### WebSocket Protocol
 - **Frames (client → backend)**: Two-message pattern — JSON `FrameMetadata` followed by binary JPEG bytes
@@ -64,12 +78,18 @@ ChromaCatch-Go/
 │   │   ├── main.py                          # FastAPI + WS endpoints + dashboard
 │   │   ├── ws_handler.py                    # WebSocket frame/control handler
 │   │   ├── session_manager.py               # Dual-channel client session tracking
+│   │   ├── mediamtx_manager.py              # MediaMTX subprocess lifecycle
+│   │   ├── rtsp_consumer.py                 # RTSP frame consumer (reads from MediaMTX for CV)
+│   │   ├── mediamtx/
+│   │   │   └── mediamtx.yml                 # MediaMTX config (SRT/RTSP/WebRTC ports)
 │   │   ├── cv/                              # Phase 2: computer vision
 │   │   ├── orchestrator/                    # Phase 3: state machine
-│   │   └── tests/                           # Backend tests (81 tests)
+│   │   └── tests/                           # Backend tests
 │   │       ├── test_backend_api.py
 │   │       ├── test_session_manager.py
 │   │       ├── test_ws_handler.py
+│   │       ├── test_mediamtx_manager.py
+│   │       ├── test_rtsp_consumer.py
 │   │       ├── test_messages.py             # Shared protocol tests
 │   │       ├── test_frame_codec.py          # Shared codec tests
 │   │       └── integration/
@@ -78,7 +98,13 @@ ChromaCatch-Go/
 │   │   ├── airplay_client/                  # Python package (airplay_client)
 │   │   │   ├── cli.py                        # CLI entry point (connect, run)
 │   │   │   ├── config.py                    # ClientSettings (CC_CLIENT_ prefix)
-│   │   │   ├── main.py                      # asyncio entrypoint (dual WS + source factory)
+│   │   │   ├── main.py                      # asyncio entrypoint (transport + control WS)
+│   │   │   ├── transport/
+│   │   │   │   ├── base.py                  # MediaTransport ABC
+│   │   │   │   ├── srt_transport.py         # SRT publisher (GStreamer→srtsink) + stats
+│   │   │   │   ├── ws_transport.py          # WebSocket transport (JPEG frames + PCM)
+│   │   │   │   ├── failover_transport.py    # SRT→WS auto-failover with recovery
+│   │   │   │   └── factory.py               # Transport factory (srt | srt-failover | websocket)
 │   │   │   ├── audio/
 │   │   │   │   ├── factory.py               # Runtime audio source selection
 │   │   │   │   ├── airplay_audio_source.py  # AirPlay RTP audio source adapter
@@ -96,11 +122,12 @@ ChromaCatch-Go/
 │   │   │   │   └── factory.py               # Runtime source selection
 │   │   │   └── commander/
 │   │   │       └── esp32_client.py          # HTTP client for ESP32 commands
-│   │   └── tests/                           # Client tests (79 tests)
+│   │   └── tests/                           # Client tests
 │   │       ├── test_airplay_manager.py
 │   │       ├── test_esp32_client.py
 │   │       ├── test_esp32_forwarder.py
 │   │       ├── test_frame_capture.py
+│   │       ├── test_transport.py            # SRT + WS transport + factory tests
 │   │       ├── test_ws_client.py
 │   │       └── test_cli.py
 │   └── esp32/                               # ESP32 firmware
@@ -118,15 +145,18 @@ ChromaCatch-Go/
 | Layer | Technology |
 |-------|-----------|
 | Backend | Python 3.11+, FastAPI, uvicorn, pydantic |
-| Client-Backend transport | WebSocket (websockets library) |
+| Media transport (primary) | SRT via GStreamer srtsink → MediaMTX → RTSP |
+| Media transport (fallback) | WebSocket (websockets library, JPEG + PCM) |
+| Media router | MediaMTX (SRT ingest, RTSP local, WebRTC/WHEP dashboard) |
 | CV | OpenCV (with GStreamer support), numpy |
-| Frame encoding | JPEG via OpenCV (720px max, quality 65 default) |
+| Frame encoding | JPEG via OpenCV (720px max, quality 65 default — WS mode only) |
+| Audio encoding | Opus via GStreamer opusenc (128kbps — SRT mode) |
 | AirPlay | UxPlay (C, installed separately) |
-| Frame capture | OpenCV GStreamer pipeline from RTP/UDP |
+| Frame capture | GStreamer pipe (fdsink) or OpenCV GStreamer pipeline |
 | ESP32 firmware | C++ / Arduino / PlatformIO |
-| ESP32 comms | WiFi HTTP (REST) |
+| ESP32 comms | WiFi HTTP (REST, keep-alive) |
 | BLE HID | ESP32 BLE HID library (BleCombo) |
-| Testing | pytest, pytest-asyncio (160 tests) |
+| Testing | pytest, pytest-asyncio (226 tests) |
 | Linting | ruff, black, mypy |
 
 ## Phases
@@ -139,7 +169,6 @@ ChromaCatch-Go/
 - [x] WebSocket client (local client → remote backend)
 - [x] WebSocket server (backend receives frames, dispatches commands)
 - [x] ESP32 command forwarder (backend → client → ESP32)
-- [x] Integration tests (160 total)
 - [x] CLI tool packaging (pip-installable `chromacatch-client`)
 - [x] Backend live dashboard with MJPEG frame streaming
 - [x] HID mouse test script
@@ -147,6 +176,23 @@ ChromaCatch-Go/
 - [x] Dual WebSocket channels (`/ws/client`, `/ws/control`) with command sequencing + ACK telemetry
 - [x] Unified client frame source layer (AirPlay, capture card, desktop capture)
 - [x] Initial AirPlay audio transport (`UxPlay -artp` + backend audio chunk ingestion)
+
+### Phase 1.5: Low-Latency Transport [COMPLETE]
+- [x] ESP32 HTTP keep-alive (persistent connections, ~20-30ms command latency reduction)
+- [x] GStreamer jitter buffer reduction (50ms → 20ms)
+- [x] Pipe-based frame capture backend (GStreamer stdout JPEG, eliminates file I/O)
+- [x] SRT media transport (`SRTTransport` — H.264 passthrough + Opus audio via GStreamer srtsink)
+- [x] WebSocket media transport (`WebSocketTransport` — JPEG + PCM fallback)
+- [x] SRT failover transport (`FailoverTransport` — auto WS fallback after 3 SRT failures, periodic SRT recovery)
+- [x] Transport factory and `MediaTransport` ABC (supports `srt`, `srt-failover`, `websocket` modes)
+- [x] SRT stats parsing (RTT, bandwidth, packet loss from GStreamer stderr)
+- [x] Frame latency instrumentation (capture timestamp → backend receipt tracking)
+- [x] MediaMTX integration (subprocess manager, mediamtx.yml config)
+- [x] RTSP frame consumer (MediaMTX RTSP → SessionManager for CV pipeline)
+- [x] Dashboard WebRTC/WHEP support with audio playback (+ MJPEG fallback)
+- [x] Dashboard SRT stats + frame latency display
+- [x] Client main.py refactored for transport mode selection
+- [x] 226 tests passing (61 new transport + failover + MediaMTX + RTSP tests)
 
 ### Phase 2: Computer Vision
 - [ ] Screen state detection (battle, overworld, menu, etc.)
@@ -166,7 +212,7 @@ ChromaCatch-Go/
 # Install
 poetry install
 
-# Run all tests (160 tests)
+# Run all tests (226 tests)
 poetry run pytest
 
 # Run by suite
@@ -191,6 +237,9 @@ chromacatch-client run --backend-url ws://<host>:8000/ws/client
 
 # Test HID mouse commands
 python scripts/test_mouse.py --backend-url http://<host>:8000
+
+# Install MediaMTX (for SRT transport)
+./scripts/install_mediamtx.sh
 
 # ESP32 Firmware (requires PlatformIO)
 cd services/esp32 && pio run              # Build
@@ -228,6 +277,13 @@ CC_CLIENT_AUDIO_CHANNELS=2
 CC_CLIENT_AUDIO_CHUNK_MS=100
 CC_CLIENT_AUDIO_INPUT_BACKEND=auto          # auto | avfoundation | pulse | dshow
 CC_CLIENT_AUDIO_INPUT_DEVICE=               # backend-specific input selector
+# Transport settings
+CC_CLIENT_TRANSPORT_MODE=websocket          # websocket | srt | srt-failover
+CC_CLIENT_SRT_BACKEND_URL=                  # srt://host:8890 (auto-derived from WS URL if empty)
+CC_CLIENT_SRT_LATENCY_MS=50                 # SRT latency buffer
+CC_CLIENT_SRT_PASSPHRASE=                   # optional SRT encryption
+CC_CLIENT_SRT_STREAM_ID=                    # auto-derived from client_id if empty
+CC_CLIENT_SRT_OPUS_BITRATE=128000           # Opus audio bitrate (SRT mode)
 ```
 
 **Backend** (`.env` with `CC_BACKEND_` prefix):
@@ -236,6 +292,15 @@ CC_BACKEND_API_KEY=your-secret-key
 CC_BACKEND_HOST=0.0.0.0
 CC_BACKEND_PORT=8000
 CC_BACKEND_MAX_FRAME_BYTES=500000
+# MediaMTX settings (for SRT transport)
+CC_BACKEND_MEDIAMTX_ENABLED=false           # Enable MediaMTX subprocess management
+CC_BACKEND_MEDIAMTX_BINARY=mediamtx         # Path or name of MediaMTX binary
+CC_BACKEND_MEDIAMTX_CONFIG=                 # Path to mediamtx.yml (auto-detected if empty)
+CC_BACKEND_MEDIAMTX_SRT_PORT=8890
+CC_BACKEND_MEDIAMTX_RTSP_PORT=8554
+CC_BACKEND_MEDIAMTX_WEBRTC_PORT=8889
+CC_BACKEND_RTSP_CONSUMER_ENABLED=false      # Enable RTSP frame consumer for CV pipeline
+CC_BACKEND_RTSP_BASE_URL=rtsp://127.0.0.1:8554
 ```
 
 ## Backend API
@@ -250,5 +315,6 @@ CC_BACKEND_MAX_FRAME_BYTES=500000
 | GET | `/clients/{id}/status` | Get client's latest status |
 | GET | `/clients/{id}/frame` | Get latest frame as JPEG |
 | GET | `/clients/{id}/audio` | Get latest audio chunk as WAV snippet |
+| POST | `/clients/{id}/rtsp-start` | Start RTSP consumer for SRT client |
 | GET | `/stream/{id}` | MJPEG live frame stream |
-| GET | `/dashboard` | Browser dashboard with status + streams |
+| GET | `/dashboard` | Browser dashboard (WebRTC + MJPEG fallback) |

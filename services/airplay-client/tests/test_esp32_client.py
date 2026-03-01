@@ -80,3 +80,15 @@ class TestESP32Client:
         with patch.object(client._client, "post", new_callable=AsyncMock, side_effect=httpx.ConnectError("refused")):
             with pytest.raises(Exception):
                 await client.move(10, 10)
+
+    def test_keepalive_connections_enabled(self, client):
+        """Verify HTTP keep-alive is enabled (not zero) for lower command latency."""
+        limits = client._client._transport._pool._max_keepalive_connections
+        assert limits > 0, "Keep-alive should be enabled to avoid TCP handshake per command"
+
+    def test_no_connection_close_header(self, client):
+        """Verify Connection: close header is not explicitly set."""
+        headers = {k.lower(): v.lower() for k, v in client._client.headers.items()}
+        assert headers.get("connection") != "close", (
+            "Connection: close header should not be set when using keep-alive"
+        )

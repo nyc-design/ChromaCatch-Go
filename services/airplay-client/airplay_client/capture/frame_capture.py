@@ -22,16 +22,19 @@ logger = logging.getLogger(__name__)
 
 class CaptureBackend(str, Enum):
     GSTREAMER = "gstreamer"
+    GSTREAMER_PIPE = "gstreamer_pipe"
     GSTREAMER_CLI = "gstreamer_cli"
 
 
 class FrameCapture:
     """Captures frames from the AirPlay RTP stream.
 
-    Supports two backends:
+    Supports three backends:
     - GStreamer: OpenCV VideoCapture with GStreamer pipeline (Linux with OpenCV GStreamer)
-    - GStreamer CLI: gst-launch-1.0 subprocess piping raw frames (macOS, or any system
-      with GStreamer installed but OpenCV lacking GStreamer support)
+    - GStreamer Pipe: gst-launch-1.0 subprocess outputting JPEG to stdout pipe (low-latency,
+      avoids file I/O overhead of CLI backend)
+    - GStreamer CLI: gst-launch-1.0 with multifilesink (fallback for macOS when pipe is
+      unreliable due to GStreamer launcher wrapper mixing text into stdout)
 
     Frames are pushed into a thread-safe queue for consumption.
     """
@@ -55,9 +58,10 @@ class FrameCapture:
             for line in build_info.split("\n"):
                 if "GStreamer" in line and "YES" in line:
                     return CaptureBackend.GSTREAMER
-        # Fall back to gst-launch-1.0 CLI subprocess
+        # Prefer pipe backend (lower latency) over CLI file-based backend.
+        # Fall back to CLI if gst-launch-1.0 not found.
         if shutil.which("gst-launch-1.0"):
-            return CaptureBackend.GSTREAMER_CLI
+            return CaptureBackend.GSTREAMER_PIPE
         raise RuntimeError(
             "No capture backend available. Install GStreamer: "
             "brew install gstreamer (macOS) or apt install gstreamer1.0-tools (Linux)"
@@ -100,7 +104,7 @@ class FrameCapture:
             "-v",
             "udpsrc", f"port={self.udp_port}", "do-timestamp=true",
             "caps=application/x-rtp,media=video,encoding-name=H264,payload=96,clock-rate=90000",
-            "!", "rtpjitterbuffer", "latency=50", "drop-on-latency=true",
+            "!", "rtpjitterbuffer", "latency=20", "drop-on-latency=true",
             "!", "rtph264depay", "!", "h264parse", "!", "avdec_h264",
             "!", "videoconvert",
             "!", "jpegenc", "quality=85",
@@ -317,6 +321,145 @@ class FrameCapture:
         logger.info("GStreamer capture loop stopped")
 
 
+    def _capture_loop_gst_pipe(self) -> None:
+        """Capture loop using gst-launch-1.0 with stdout JPEG pipe.
+
+        Outputs JPEG-encoded frames to stdout via fdsink. Python reads from
+        the pipe and parses JPEG frame boundaries (SOI=FFD8, EOI=FFD9).
+        Eliminates file I/O overhead of the multifilesink CLI backend.
+        """
+        logger.info("Waiting for AirPlay stream on port %d (GStreamer pipe)...", self.udp_port)
+
+        while self._running:
+            proc = None
+            try:
+                proc = self._start_gst_pipe_process()
+                logger.info("AirPlay stream connected via GStreamer pipe!")
+            except RuntimeError as e:
+                logger.info("GStreamer pipe not ready: %s — retrying in 3s...", e)
+                time.sleep(3)
+                continue
+
+            if not self._running:
+                break
+
+            last_frame_at = time.time()
+            saw_frames = False
+            reconnect_timeout_s = max(2.0, settings.airplay_reconnect_timeout_s)
+            buf = b""
+
+            while self._running:
+                if proc.poll() is not None:
+                    logger.warning(
+                        "GStreamer pipe process exited (rc=%d), restarting",
+                        proc.returncode,
+                    )
+                    break
+
+                # Non-blocking read from stdout pipe
+                try:
+                    chunk = os.read(proc.stdout.fileno(), 131072)
+                except OSError:
+                    chunk = b""
+
+                if not chunk:
+                    if saw_frames and (time.time() - last_frame_at) > reconnect_timeout_s:
+                        logger.warning(
+                            "No frames for %.1fs; restarting pipe",
+                            reconnect_timeout_s,
+                        )
+                        break
+                    time.sleep(0.002)
+                    continue
+
+                buf += chunk
+
+                # Parse complete JPEG frames from buffer (SOI=FFD8 ... EOI=FFD9).
+                # JPEG spec guarantees FFD8/FFD9 don't appear in entropy data
+                # (0xFF bytes in scan data are always followed by 0x00 stuffing).
+                while True:
+                    soi = buf.find(b"\xff\xd8")
+                    if soi == -1:
+                        buf = b""
+                        break
+                    if soi > 0:
+                        buf = buf[soi:]  # discard bytes before SOI
+                        soi = 0
+                    eoi = buf.find(b"\xff\xd9", 2)
+                    if eoi == -1:
+                        break  # incomplete frame, wait for more data
+                    jpeg_data = buf[: eoi + 2]
+                    buf = buf[eoi + 2 :]
+                    arr = np.frombuffer(jpeg_data, dtype=np.uint8)
+                    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if frame is not None:
+                        self._push_frame(frame)
+                        last_frame_at = time.time()
+                        saw_frames = True
+
+            # Cleanup
+            if proc and proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=3)
+            self._gst_proc = None
+
+        logger.info("GStreamer pipe capture loop stopped")
+
+    def _start_gst_pipe_process(self) -> subprocess.Popen:
+        """Start gst-launch-1.0 with JPEG output to stdout pipe.
+
+        Uses -q (quiet) to prevent GStreamer text from mixing into stdout.
+        JPEG encoding is used (instead of raw) so Python can detect frame
+        boundaries without needing to know the resolution in advance.
+        """
+        gst_path = shutil.which("gst-launch-1.0")
+        if not gst_path:
+            raise RuntimeError("gst-launch-1.0 not found. Install GStreamer.")
+
+        cmd = [
+            gst_path,
+            "-q",  # quiet: suppress text output that could mix with frame bytes
+            "-e",  # send EOS on interrupt for clean shutdown
+            "udpsrc", f"port={self.udp_port}", "do-timestamp=true",
+            f"caps=application/x-rtp,media=video,encoding-name=H264,payload=96,clock-rate=90000",
+            "!", "rtpjitterbuffer", "latency=20", "drop-on-latency=true",
+            "!", "rtph264depay", "!", "h264parse", "!", "avdec_h264",
+            "!", "videoconvert",
+            "!", "jpegenc", "quality=85",
+            "!", "fdsink", "fd=1", "sync=false",
+        ]
+        logger.info("Starting GStreamer pipe: %s", " ".join(cmd))
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self._gst_proc = proc
+
+        # Drain stderr in background to prevent pipe buffer blocking
+        threading.Thread(target=self._drain_stream, args=(proc.stderr,), daemon=True).start()
+
+        # Wait for first data on stdout (up to 120s for AirPlay connection)
+        deadline = time.time() + 120
+        logger.info("GStreamer pipe pid=%d, waiting for first frame data...", proc.pid)
+        while time.time() < deadline and self._running:
+            if proc.poll() is not None:
+                raise RuntimeError(f"GStreamer pipe exited early (rc={proc.returncode})")
+            # Peek for data availability via select
+            try:
+                ready, _, _ = select.select([proc.stdout], [], [], 0.5)
+            except (ValueError, OSError):
+                ready = []
+            if ready:
+                logger.info("GStreamer pipe: first data received")
+                return proc
+            time.sleep(0.5)
+
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=3)
+        raise RuntimeError("GStreamer pipe: no data received within timeout")
+
     def _capture_loop_gst_cli(self) -> None:
         """Capture loop using gst-launch-1.0 with multifilesink.
 
@@ -419,6 +562,8 @@ class FrameCapture:
         self._running = True
         if self.backend == CaptureBackend.GSTREAMER:
             target = self._capture_loop_gstreamer
+        elif self.backend == CaptureBackend.GSTREAMER_PIPE:
+            target = self._capture_loop_gst_pipe
         else:
             target = self._capture_loop_gst_cli
         self._thread = threading.Thread(target=target, daemon=True)

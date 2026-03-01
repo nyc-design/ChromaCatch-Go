@@ -61,6 +61,16 @@ class ClientSettings(BaseSettings):
     audio_input_backend: str = "auto"  # auto | avfoundation | pulse | dshow
     audio_input_device: str = ""  # backend-specific input selector
 
+    # Transport mode: "srt" for low-latency SRT transport, "websocket" for legacy WS/JPEG
+    transport_mode: str = "websocket"  # default to websocket until SRT backend is configured
+
+    # SRT transport settings (used when transport_mode="srt")
+    srt_backend_url: str = ""  # e.g. srt://host:8890
+    srt_latency_ms: int = 50  # SRT latency buffer (ms)
+    srt_passphrase: str = ""  # optional SRT encryption passphrase
+    srt_stream_id: str = ""  # auto-derived from client_id if empty
+    srt_opus_bitrate: int = 128000  # Opus audio bitrate (bps)
+
     # WebSocket resilience
     ws_reconnect_delay: float = 1.0
     ws_reconnect_max_delay: float = 30.0

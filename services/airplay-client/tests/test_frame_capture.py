@@ -15,11 +15,11 @@ class TestCaptureBackend:
             backend = FrameCapture._detect_backend()
             assert backend == CaptureBackend.GSTREAMER
 
-    def test_gstreamer_cli_fallback(self):
+    def test_gstreamer_pipe_preferred_over_cli(self):
         with patch("cv2.getBuildInformation", return_value="  GStreamer:                  NO"):
             with patch("shutil.which", return_value="/opt/homebrew/bin/gst-launch-1.0"):
                 backend = FrameCapture._detect_backend()
-                assert backend == CaptureBackend.GSTREAMER_CLI
+                assert backend == CaptureBackend.GSTREAMER_PIPE
 
     def test_no_backend_raises(self):
         with patch("cv2.getBuildInformation", return_value="  GStreamer:                  NO"):
@@ -130,3 +130,75 @@ class TestFrameCapture:
 
     def test_stop_when_not_started(self, capture):
         capture.stop()
+
+
+class TestGStreamerPipeBackend:
+    """Tests for the GSTREAMER_PIPE backend."""
+
+    @pytest.fixture
+    def pipe_capture(self):
+        return FrameCapture(udp_port=5000, backend=CaptureBackend.GSTREAMER_PIPE)
+
+    def test_pipe_backend_enum(self):
+        assert CaptureBackend.GSTREAMER_PIPE.value == "gstreamer_pipe"
+
+    def test_start_gst_pipe_process_builds_correct_command(self, pipe_capture):
+        """Verify the pipe process command includes -q and fdsink."""
+        with patch("shutil.which", return_value="/usr/bin/gst-launch-1.0"):
+            with patch("subprocess.Popen") as mock_popen:
+                mock_proc = mock_popen.return_value
+                mock_proc.pid = 12345
+                mock_proc.poll.return_value = None
+                mock_proc.stderr = type("FakeStream", (), {"fileno": lambda s: 3})()
+                mock_proc.stdout = type("FakeStream", (), {"fileno": lambda s: 4})()
+
+                with patch("threading.Thread"):
+                    with patch("select.select", return_value=([mock_proc.stdout], [], [])):
+                        pipe_capture._running = True
+                        proc = pipe_capture._start_gst_pipe_process()
+
+                cmd = mock_popen.call_args[0][0]
+                assert "-q" in cmd
+                assert "fdsink" in cmd
+                assert "fd=1" in cmd
+                assert "jpegenc" in cmd
+                assert "latency=20" in cmd
+
+    def test_jpeg_boundary_parsing(self, pipe_capture):
+        """Verify JPEG frame boundary detection from byte stream."""
+        # Create two minimal valid JPEG frames
+        import cv2
+        frame1 = np.full((50, 50, 3), 100, dtype=np.uint8)
+        frame2 = np.full((50, 50, 3), 200, dtype=np.uint8)
+        _, jpg1 = cv2.imencode(".jpg", frame1, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        _, jpg2 = cv2.imencode(".jpg", frame2, [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+        # Verify SOI and EOI markers
+        assert jpg1.tobytes()[:2] == b"\xff\xd8"
+        assert jpg1.tobytes()[-2:] == b"\xff\xd9"
+
+        # Simulate a byte stream with two JPEG frames concatenated
+        stream = jpg1.tobytes() + jpg2.tobytes()
+        buf = stream
+        frames_found = []
+
+        while True:
+            soi = buf.find(b"\xff\xd8")
+            if soi == -1:
+                break
+            if soi > 0:
+                buf = buf[soi:]
+                soi = 0
+            eoi = buf.find(b"\xff\xd9", 2)
+            if eoi == -1:
+                break
+            jpeg_data = buf[:eoi + 2]
+            buf = buf[eoi + 2:]
+            arr = np.frombuffer(jpeg_data, dtype=np.uint8)
+            frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if frame is not None:
+                frames_found.append(frame)
+
+        assert len(frames_found) == 2
+        assert frames_found[0][25, 25, 0] == pytest.approx(100, abs=5)
+        assert frames_found[1][25, 25, 0] == pytest.approx(200, abs=5)

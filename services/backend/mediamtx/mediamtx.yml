@@ -1,0 +1,39 @@
+###############################################
+# MediaMTX configuration for ChromaCatch-Go
+###############################################
+
+logLevel: info
+logDestinations: [stdout]
+
+# --- SRT listener for client ingest ---
+srt: yes
+srtAddress: :8890
+
+# --- RTSP server for backend CV consumption ---
+rtsp: yes
+rtspAddress: :8554
+rtspEncryption: "no"
+rtspTransport: tcp
+
+# --- WebRTC for browser dashboard ---
+webrtc: yes
+webrtcAddress: :8889
+webrtcEncryption: "no"
+webrtcICEServers2:
+  - urls: [stun:stun.l.google.com:19302]
+
+# Disable unused protocols
+rtmp: no
+hls: no
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: ""
+
+# --- Path configuration ---
+paths:
+  all:
+    source: publisher
+    # Allow publishing from any source (SRT, RTSP push, etc.)
+    sourceOnDemand: no
+    # Keep stream active even if no readers
+    runOnReady: ""
+    runOnNotReady: ""

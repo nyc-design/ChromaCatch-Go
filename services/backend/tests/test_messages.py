@@ -144,10 +144,49 @@ class TestClientStatus:
         assert msg.frames_captured == 0
         assert msg.audio_source is None
 
+    def test_transport_fields_default(self):
+        msg = ClientStatus(airplay_running=False, esp32_reachable=False)
+        assert msg.transport_mode == "websocket"
+        assert msg.transport_connected is False
+
+    def test_transport_fields_srt(self):
+        msg = ClientStatus(
+            airplay_running=True, esp32_reachable=True,
+            transport_mode="srt", transport_connected=True,
+        )
+        assert msg.transport_mode == "srt"
+        assert msg.transport_connected is True
+
     def test_roundtrip_json(self):
         msg = ClientStatus(airplay_running=True, esp32_reachable=False, uptime_seconds=120.5)
         parsed = ClientStatus.model_validate_json(msg.model_dump_json())
         assert parsed.uptime_seconds == 120.5
+
+    def test_roundtrip_json_with_transport(self):
+        msg = ClientStatus(
+            airplay_running=True, esp32_reachable=False,
+            transport_mode="srt", transport_connected=True,
+        )
+        parsed = ClientStatus.model_validate_json(msg.model_dump_json())
+        assert parsed.transport_mode == "srt"
+        assert parsed.transport_connected is True
+
+    def test_srt_stats_defaults(self):
+        msg = ClientStatus(airplay_running=False, esp32_reachable=False)
+        assert msg.srt_rtt_ms is None
+        assert msg.srt_bandwidth_kbps is None
+        assert msg.srt_packet_loss_pct is None
+
+    def test_srt_stats_roundtrip(self):
+        msg = ClientStatus(
+            airplay_running=True, esp32_reachable=True,
+            transport_mode="srt", transport_connected=True,
+            srt_rtt_ms=12.5, srt_bandwidth_kbps=2500.0, srt_packet_loss_pct=0.1,
+        )
+        parsed = ClientStatus.model_validate_json(msg.model_dump_json())
+        assert parsed.srt_rtt_ms == 12.5
+        assert parsed.srt_bandwidth_kbps == 2500.0
+        assert parsed.srt_packet_loss_pct == 0.1
 
 
 class TestConfigUpdate:

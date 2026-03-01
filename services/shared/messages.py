@@ -64,6 +64,8 @@ class ClientStatus(BaseMessage):
     capture_source: str = "airplay"
     source_running: bool = False
     control_channel_connected: bool = False
+    transport_mode: str = "websocket"
+    transport_connected: bool = False
     commands_sent: int = 0
     commands_acked: int = 0
     last_command_rtt_ms: float | None = None
@@ -72,6 +74,10 @@ class ClientStatus(BaseMessage):
     audio_chunks_captured: int = 0
     audio_chunks_sent: int = 0
     uptime_seconds: float = 0.0
+    # SRT transport stats (populated when transport_mode="srt")
+    srt_rtt_ms: float | None = None
+    srt_bandwidth_kbps: float | None = None
+    srt_packet_loss_pct: float | None = None
 
 
 # --- Backend -> Client ---

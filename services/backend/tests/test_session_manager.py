@@ -118,6 +118,51 @@ class TestSessionManager:
     def test_get_latest_frame_nonexistent(self, manager):
         assert manager.get_latest_frame("nope") is None
 
+    def test_update_frame_existing_session(self, manager):
+        import asyncio
+        loop = asyncio.get_event_loop()
+        ws = AsyncMock()
+        loop.run_until_complete(manager.register("c1", ws))
+        frame = np.zeros((100, 100, 3), dtype=np.uint8)
+        jpeg = b"\xff\xd8fake\xff\xd9"
+        manager.update_frame("c1", frame, jpeg, capture_timestamp=1000.0)
+        session = manager.get_session("c1")
+        assert session.frames_received == 1
+        assert session.latest_frame_sequence == 1
+        assert session.latest_frame_jpeg == jpeg
+        assert session.last_frame_at == 1000.0
+
+    def test_update_frame_auto_creates_session(self, manager):
+        frame = np.zeros((50, 50, 3), dtype=np.uint8)
+        jpeg = b"\xff\xd8test\xff\xd9"
+        manager.update_frame("rtsp-client", frame, jpeg)
+        session = manager.get_session("rtsp-client")
+        assert session is not None
+        assert session.frames_received == 1
+        assert session.latest_frame is not None
+
+    def test_update_frame_computes_latency(self, manager):
+        import asyncio, time
+        loop = asyncio.get_event_loop()
+        ws = AsyncMock()
+        loop.run_until_complete(manager.register("c1", ws))
+        frame = np.zeros((100, 100, 3), dtype=np.uint8)
+        capture_ts = time.time() - 0.05  # 50ms ago
+        manager.update_frame("c1", frame, b"\xff\xd8\xff\xd9", capture_timestamp=capture_ts)
+        session = manager.get_session("c1")
+        assert session.last_frame_latency_ms is not None
+        assert session.last_frame_latency_ms >= 40.0  # at least ~40ms (allowing for execution time)
+
+    def test_update_frame_no_timestamp_no_latency(self, manager):
+        import asyncio
+        loop = asyncio.get_event_loop()
+        ws = AsyncMock()
+        loop.run_until_complete(manager.register("c1", ws))
+        frame = np.zeros((100, 100, 3), dtype=np.uint8)
+        manager.update_frame("c1", frame, b"\xff\xd8\xff\xd9")
+        session = manager.get_session("c1")
+        assert session.last_frame_latency_ms is None
+
     def test_mark_command_ack_updates_rtt(self, manager):
         ws = AsyncMock()
         import asyncio
