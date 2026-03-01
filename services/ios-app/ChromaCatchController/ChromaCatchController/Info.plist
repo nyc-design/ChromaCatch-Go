@@ -43,12 +43,11 @@
         <string>com.feasycom.BLEAssistant</string>
     </array>
 
-    <!-- Background Modes -->
+    <!-- Background Modes (bluetooth-central keeps app alive via BLE notifications) -->
     <key>UIBackgroundModes</key>
     <array>
         <string>external-accessory</string>
         <string>bluetooth-central</string>
-        <string>location</string>
     </array>
 
     <!-- Bluetooth Usage Descriptions -->
@@ -58,14 +57,7 @@
     <key>NSBluetoothPeripheralUsageDescription</key>
     <string>ChromaCatch uses Bluetooth to communicate with the iTools GPS dongle.</string>
 
-    <!-- Location Usage Descriptions -->
-    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>ChromaCatch needs continuous location access to maintain GPS dongle connectivity in the background.</string>
-
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>ChromaCatch uses location services to work with the GPS dongle.</string>
-
-    <!-- Local Network Access (for ESP32 HTTP relay in future) -->
+    <!-- Local Network Access (for ESP32 HTTP relay) -->
     <key>NSLocalNetworkUsageDescription</key>
     <string>ChromaCatch connects to local devices for GPS data processing.</string>
 

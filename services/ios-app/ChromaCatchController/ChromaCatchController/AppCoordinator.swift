@@ -16,7 +16,6 @@ class AppCoordinator: ObservableObject {
     let wsManager: WebSocketManager         // Main backend (HID + status)
     let locationWSManager: WebSocketManager  // Location service (GPS coords)
     let esp32Client: ESP32HTTPClient
-    let locationKeepAlive: LocationKeepAlive
 
     @Published var logs: [LogEntry] = []
     @Published var isRunning = false
@@ -109,7 +108,6 @@ class AppCoordinator: ObservableObject {
             port: Int(savedESP32Port) ?? 80,
             log: logFn
         )
-        locationKeepAlive = LocationKeepAlive(log: logFn)
 
         coordinator = self
 
@@ -149,14 +147,14 @@ class AppCoordinator: ObservableObject {
         // Update ESP32 endpoint from current settings
         esp32Client.updateEndpoint(host: esp32Host, port: Int(esp32Port) ?? 80)
 
-        // 1. Location keepalive for background execution
-        locationKeepAlive.startBackgroundUpdates()
+        // Background keepalive: bluetooth-central mode keeps app alive
+        // as long as BLE connection + FF02 notifications are active.
+        // No CLLocationManager needed.
 
-        // 2. EA session auto-detects paired dongle on init
-        // 3. Monitor EA state → start BLE when EA is up
+        // Monitor EA state
         startMonitoring()
 
-        // 4. Connect both WebSockets
+        // Connect both WebSockets
         wsManager.connect()
         locationWSManager.connect()
 
@@ -168,7 +166,6 @@ class AppCoordinator: ObservableObject {
         dongleController.stop()
         wsManager.disconnect()
         locationWSManager.disconnect()
-        locationKeepAlive.stop()
         monitorTimer?.invalidate()
         monitorTimer = nil
         statusTimer?.invalidate()
@@ -203,21 +200,32 @@ class AppCoordinator: ObservableObject {
     }
 
     private func checkConnections() {
-        // BLE and EA are independent connections to different dongle identities:
-        // BT-01414-CORE = EA (Classic BT/MFi), BT-01414-APP = BLE (GATT)
-        // Both must connect independently — BLE should NOT wait for EA.
-
-        // Keep BLE scanning if not yet connected
-        if !bleManager.isConnected {
-            bleManager.startScanning()
-        }
-
         // Retry EA session if not connected (dongle may have been paired after app start)
         if !eaManager.isConnected {
             eaManager.retryConnection()
         }
+        // BLE connection is user-initiated via "Scan for Dongle" button.
+        // DongleController auto-starts via BLEManager.onReady callback.
+    }
 
-        // DongleController auto-starts via BLEManager.onReady callback
+    // MARK: - Dongle Pairing (user-initiated)
+
+    func startDongleScan() {
+        bleManager.startScanning()
+    }
+
+    func stopDongleScan() {
+        bleManager.stopScanning()
+    }
+
+    func connectToDongle(_ device: DiscoveredDevice) {
+        bleManager.connect(to: device)
+    }
+
+    func disconnectDongle() {
+        dongleController.stop()
+        bleManager.disconnect()
+        addLog("Dongle disconnected")
     }
 
     // MARK: - Control Channel Message Handling (Main Backend)

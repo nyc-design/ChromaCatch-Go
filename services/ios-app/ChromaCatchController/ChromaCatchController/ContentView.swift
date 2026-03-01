@@ -14,6 +14,7 @@ struct ContentView: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         SettingsSection()
+                        DongleSection()
                         BroadcastSection()
                         CoordinateSection()
                         DongleInfoSection()
@@ -118,6 +119,116 @@ struct SettingsSection: View {
         .padding()
         .background(Color(.secondarySystemGroupedBackground))
         .cornerRadius(12)
+    }
+}
+
+// MARK: - Dongle Section
+
+struct DongleSection: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var showScanner = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("iTools Dongle")
+                .font(.headline)
+
+            if coordinator.bleManager.isConnected, let name = coordinator.bleManager.connectedDeviceName {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text(name)
+                        .font(.system(.body, design: .monospaced))
+                    Spacer()
+                    Button("Disconnect") {
+                        coordinator.disconnectDongle()
+                    }
+                    .font(.caption)
+                    .foregroundColor(.red)
+                }
+            } else {
+                Text("Scan for nearby iTools dongles to pair.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Button("Scan for Dongle") {
+                    coordinator.startDongleScan()
+                    showScanner = true
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(12)
+        .sheet(isPresented: $showScanner) {
+            coordinator.stopDongleScan()
+        } content: {
+            DongleScannerSheet(showScanner: $showScanner)
+                .environmentObject(coordinator)
+        }
+    }
+}
+
+struct DongleScannerSheet: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @Binding var showScanner: Bool
+
+    var body: some View {
+        NavigationView {
+            List {
+                if coordinator.bleManager.discoveredDevices.isEmpty {
+                    HStack {
+                        ProgressView()
+                            .padding(.trailing, 8)
+                        Text("Scanning for BT-01414 devices...")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                ForEach(coordinator.bleManager.discoveredDevices) { device in
+                    Button {
+                        coordinator.connectToDongle(device)
+                        showScanner = false
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(device.name)
+                                    .font(.body)
+                                    .foregroundColor(.primary)
+                                Text("RSSI: \(device.rssi) dBm")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            signalIcon(rssi: device.rssi)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Select Dongle")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showScanner = false }
+                }
+            }
+        }
+    }
+
+    private func signalIcon(rssi: Int) -> some View {
+        let bars: Int
+        if rssi > -50 { bars = 3 }
+        else if rssi > -70 { bars = 2 }
+        else { bars = 1 }
+
+        return HStack(spacing: 2) {
+            ForEach(1...3, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(i <= bars ? Color.green : Color.gray.opacity(0.3))
+                    .frame(width: 4, height: CGFloat(i * 6))
+            }
+        }
     }
 }
 

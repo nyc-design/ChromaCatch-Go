@@ -13,8 +13,7 @@
 		A1000004 /* BLEManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000004 /* BLEManager.swift */; };
 		A1000005 /* EAManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000005 /* EAManager.swift */; };
 		A1000006 /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000006 /* WebSocketManager.swift */; };
-		A1000007 /* LocationKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007 /* LocationKeepAlive.swift */; };
-		A1000008 /* NMEAGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000008 /* NMEAGenerator.swift */; };
+A1000008 /* NMEAGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000008 /* NMEAGenerator.swift */; };
 		A1000009 /* DongleController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000009 /* DongleController.swift */; };
 		A100000A /* Messages.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000A /* Messages.swift */; };
 		A100000B /* ESP32HTTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000C /* ESP32HTTPClient.swift */; };
@@ -56,8 +55,7 @@
 		A2000004 /* BLEManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEManager.swift; sourceTree = "<group>"; };
 		A2000005 /* EAManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EAManager.swift; sourceTree = "<group>"; };
 		A2000006 /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
-		A2000007 /* LocationKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationKeepAlive.swift; sourceTree = "<group>"; };
-		A2000008 /* NMEAGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NMEAGenerator.swift; sourceTree = "<group>"; };
+A2000008 /* NMEAGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NMEAGenerator.swift; sourceTree = "<group>"; };
 		A2000009 /* DongleController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DongleController.swift; sourceTree = "<group>"; };
 		A200000A /* Messages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Messages.swift; sourceTree = "<group>"; };
 		A200000B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -121,7 +119,6 @@
 				A2000004 /* BLEManager.swift */,
 				A2000005 /* EAManager.swift */,
 				A2000006 /* WebSocketManager.swift */,
-				A2000007 /* LocationKeepAlive.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -257,8 +254,7 @@
 				A1000004 /* BLEManager.swift in Sources */,
 				A1000005 /* EAManager.swift in Sources */,
 				A1000006 /* WebSocketManager.swift in Sources */,
-				A1000007 /* LocationKeepAlive.swift in Sources */,
-				A1000008 /* NMEAGenerator.swift in Sources */,
+A1000008 /* NMEAGenerator.swift in Sources */,
 				A1000009 /* DongleController.swift in Sources */,
 				A100000A /* Messages.swift in Sources */,
 				A100000B /* ESP32HTTPClient.swift in Sources */,
