@@ -54,8 +54,8 @@ class AppCoordinator: ObservableObject {
     private let sharedDefaults = UserDefaults(suiteName: "group.com.chromacatch")
 
     init() {
-        let savedBackendURL = UserDefaults.standard.string(forKey: "backendURL") ?? "wss://localhost:8000/ws/control"
-        let savedLocationURL = UserDefaults.standard.string(forKey: "locationServiceURL") ?? "wss://localhost:8001/ws/location"
+        let savedBackendURL = UserDefaults.standard.string(forKey: "backendURL") ?? "wss://8000--main--chromacatch-go-agents--nyc-design.apps.coder.tapiavala.com/ws/control"
+        let savedLocationURL = UserDefaults.standard.string(forKey: "locationServiceURL") ?? "wss://8001--main--chromacatch-go-agents--nyc-design.apps.coder.tapiavala.com/ws/location"
         let savedKey = UserDefaults.standard.string(forKey: "apiKey") ?? ""
         let savedESP32Host = UserDefaults.standard.string(forKey: "esp32Host") ?? "192.168.1.100"
         let savedESP32Port = UserDefaults.standard.string(forKey: "esp32Port") ?? "80"
