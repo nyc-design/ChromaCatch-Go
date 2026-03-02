@@ -43,11 +43,12 @@
         <string>com.feasycom.BLEAssistant</string>
     </array>
 
-    <!-- Background Modes (bluetooth-central keeps app alive via BLE notifications) -->
+    <!-- Background Modes -->
     <key>UIBackgroundModes</key>
     <array>
         <string>external-accessory</string>
         <string>bluetooth-central</string>
+        <string>location</string>
     </array>
 
     <!-- Bluetooth Usage Descriptions -->
@@ -57,9 +58,12 @@
     <key>NSBluetoothPeripheralUsageDescription</key>
     <string>ChromaCatch uses Bluetooth to communicate with the iTools GPS dongle.</string>
 
-    <!-- Location Usage (GPS verification — compare actual vs spoofed position) -->
+    <!-- Location Usage (GPS verification + background keepalive) -->
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>ChromaCatch reads your GPS location to verify the spoofed coordinates are being applied correctly.</string>
+
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>ChromaCatch needs continuous location access to keep the GPS dongle active in the background. Without this, the spoofed location will revert when the app is minimized.</string>
 
     <!-- Local Network Access (for ESP32 HTTP relay) -->
     <key>NSLocalNetworkUsageDescription</key>

@@ -17,6 +17,7 @@ class AppCoordinator: ObservableObject {
     let locationWSManager: WebSocketManager  // Location service (GPS coords)
     let esp32Client: ESP32HTTPClient
     let locationMonitor: LocationMonitor
+    let locationKeepAlive: LocationKeepAlive
     let dnsFilterManager: DNSFilterManager
 
     @Published var logs: [LogEntry] = []
@@ -123,6 +124,7 @@ class AppCoordinator: ObservableObject {
             log: logFn
         )
         locationMonitor = LocationMonitor(log: logFn)
+        locationKeepAlive = LocationKeepAlive(log: logFn)
         dnsFilterManager = DNSFilterManager(log: logFn)
 
         coordinator = self
@@ -208,6 +210,9 @@ class AppCoordinator: ObservableObject {
         // Update ESP32 endpoint from current settings
         esp32Client.updateEndpoint(host: esp32Host, port: Int(esp32Port) ?? 80)
 
+        // Start background keepalive (keeps app alive so timers fire in background)
+        locationKeepAlive.start()
+
         // Start GPS verification polling
         locationMonitor.startMonitoring()
 
@@ -224,6 +229,7 @@ class AppCoordinator: ObservableObject {
     func stop() {
         isRunning = false
         dongleController.stop()
+        locationKeepAlive.stop()
         locationMonitor.stopMonitoring()
         wsManager.disconnect()
         locationWSManager.disconnect()

@@ -25,6 +25,7 @@ A1000008 /* NMEAGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A
 		B1000005 /* ChromaCatchBroadcast.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B3000001 /* ChromaCatchBroadcast.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C1000001 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2000001 /* PacketTunnelProvider.swift */; };
 		C1000002 /* DNSFilterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2000004 /* DNSFilterManager.swift */; };
+		A100000C /* LocationKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000E /* LocationKeepAlive.swift */; };
 		C1000003 /* ChromaCatchDNS.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C3000001 /* ChromaCatchDNS.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -74,6 +75,7 @@ A2000008 /* NMEAGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType 
 		A200000B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A200000C /* ESP32HTTPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESP32HTTPClient.swift; sourceTree = "<group>"; };
 		A200000D /* ChromaCatchController.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ChromaCatchController.entitlements; sourceTree = "<group>"; };
+		A200000E /* LocationKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationKeepAlive.swift; sourceTree = "<group>"; };
 		A3000001 /* ChromaCatchController.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChromaCatchController.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B2000001 /* SampleHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleHandler.swift; sourceTree = "<group>"; };
 		B2000002 /* H264Encoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = H264Encoder.swift; sourceTree = "<group>"; };
@@ -146,6 +148,7 @@ A2000008 /* NMEAGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType 
 				A2000005 /* EAManager.swift */,
 				A2000006 /* WebSocketManager.swift */,
 				A2000007 /* LocationMonitor.swift */,
+				A200000E /* LocationKeepAlive.swift */,
 				C2000004 /* DNSFilterManager.swift */,
 			);
 			path = Managers;
@@ -319,6 +322,7 @@ A1000008 /* NMEAGenerator.swift in Sources */,
 				A100000A /* Messages.swift in Sources */,
 				A100000B /* ESP32HTTPClient.swift in Sources */,
 				A1000007 /* LocationMonitor.swift in Sources */,
+				A100000C /* LocationKeepAlive.swift in Sources */,
 				C1000002 /* DNSFilterManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
