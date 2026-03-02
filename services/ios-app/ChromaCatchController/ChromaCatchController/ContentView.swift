@@ -7,7 +7,7 @@ struct ContentView: View {
     @EnvironmentObject var coordinator: AppCoordinator
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 StatusBar()
 
@@ -187,7 +187,7 @@ struct DongleScannerSheet: View {
     @Binding var showScanner: Bool
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 if coordinator.bleManager.discoveredDevices.isEmpty && coordinator.bleManager.isScanning {
                     HStack {
