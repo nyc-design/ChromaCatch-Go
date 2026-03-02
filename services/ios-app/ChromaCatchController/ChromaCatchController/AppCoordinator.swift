@@ -17,6 +17,7 @@ class AppCoordinator: ObservableObject {
     let locationWSManager: WebSocketManager  // Location service (GPS coords)
     let esp32Client: ESP32HTTPClient
     let locationMonitor: LocationMonitor
+    let dnsFilterManager: DNSFilterManager
 
     @Published var logs: [LogEntry] = []
     @Published var isRunning = false
@@ -28,6 +29,11 @@ class AppCoordinator: ObservableObject {
     @Published var gpsDriftMeters: Double = 0
     @Published var iosReportedLat: Double = 0
     @Published var iosReportedLon: Double = 0
+
+    // DNS filter — persisted toggle state
+    @Published var dnsFilterEnabled: Bool {
+        didSet { UserDefaults.standard.set(dnsFilterEnabled, forKey: "dnsFilterEnabled") }
+    }
 
     // Configuration (set from UI or stored in UserDefaults)
     @Published var backendURL: String {
@@ -76,8 +82,10 @@ class AppCoordinator: ObservableObject {
         let savedESP32Host = UserDefaults.standard.string(forKey: "esp32Host") ?? "192.168.1.100"
         let savedESP32Port = UserDefaults.standard.string(forKey: "esp32Port") ?? "80"
         let savedClientId = UserDefaults.standard.string(forKey: "clientId") ?? "ios-app"
+        let savedDNSFilter = UserDefaults.standard.bool(forKey: "dnsFilterEnabled")
 
         self.backendURL = savedBackendURL
+        self.dnsFilterEnabled = savedDNSFilter
         self.locationServiceURL = savedLocationURL
         self.apiKey = savedKey
         self.esp32Host = savedESP32Host
@@ -115,6 +123,7 @@ class AppCoordinator: ObservableObject {
             log: logFn
         )
         locationMonitor = LocationMonitor(log: logFn)
+        dnsFilterManager = DNSFilterManager(log: logFn)
 
         coordinator = self
 
@@ -125,6 +134,11 @@ class AppCoordinator: ObservableObject {
 
         setupCallbacks()
         setupLocationMonitorBindings()
+
+        // Restore DNS filter state from last session
+        if savedDNSFilter {
+            Task { await dnsFilterManager.enable() }
+        }
     }
 
     private func setupCallbacks() {
@@ -388,6 +402,19 @@ class AppCoordinator: ObservableObject {
             driftMeters: gpsDriftMeters, isAccurate: gpsAccurate
         )
         locationWSManager.sendJSON(msg)
+    }
+
+    // MARK: - DNS Filter Control
+
+    func toggleDNSFilter() {
+        dnsFilterEnabled.toggle()
+        if dnsFilterEnabled {
+            Task { await dnsFilterManager.enable() }
+            addLog("DNS filter: enabling")
+        } else {
+            dnsFilterManager.disable()
+            addLog("DNS filter: disabling")
+        }
     }
 
     // MARK: - Manual Control

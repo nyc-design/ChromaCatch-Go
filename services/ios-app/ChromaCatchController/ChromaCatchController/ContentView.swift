@@ -17,6 +17,7 @@ struct ContentView: View {
                         DongleSection()
                         BroadcastSection()
                         CoordinateSection()
+                        DNSFilterSection()
                         DongleInfoSection()
                         LogSection()
                     }
@@ -50,6 +51,11 @@ struct StatusBar: View {
                 label: "GPS",
                 connected: coordinator.gpsAccurate,
                 activeColor: .cyan
+            )
+            StatusBadge(
+                label: "DNS",
+                connected: coordinator.dnsFilterManager.isConnected,
+                activeColor: .yellow
             )
         }
         .padding(.vertical, 8)
@@ -363,6 +369,39 @@ struct CoordinateSection: View {
     private func sendParsedCoords() {
         guard let (lat, lon) = parseCoords() else { return }
         coordinator.sendManualLocation(lat: lat, lon: lon)
+    }
+}
+
+// MARK: - DNS Filter Section
+
+struct DNSFilterSection: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Location Guard")
+                .font(.headline)
+
+            Text("Block Apple Wi-Fi/cell positioning to prevent location rebound while spoofing.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Toggle("Block Apple Location Services", isOn: Binding(
+                get: { coordinator.dnsFilterEnabled },
+                set: { _ in coordinator.toggleDNSFilter() }
+            ))
+
+            HStack {
+                Text("Status:")
+                    .foregroundColor(.secondary)
+                Text(coordinator.dnsFilterManager.isConnected ? "Active" : "Inactive")
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(coordinator.dnsFilterManager.isConnected ? .green : .secondary)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(12)
     }
 }
 
