@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from location_service.config import location_settings
 from location_service.session_manager import LocationSessionManager
 from shared.constants import MessageType, setup_logging
-from shared.messages import LocationStatusMessage, LocationUpdateMessage, parse_message
+from shared.messages import LocationUpdateMessage, parse_message
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -57,16 +57,13 @@ async def websocket_location(
     try:
         while True:
             text = await websocket.receive_text()
-            # Handle ping/pong, location_status, and other messages from client
+            # Handle ping/pong and status messages from client
             try:
                 msg = parse_message(text)
                 if msg.type == MessageType.PING:
                     from shared.messages import HeartbeatPong
 
                     await websocket.send_text(HeartbeatPong().model_dump_json())
-                elif msg.type == MessageType.LOCATION_STATUS:
-                    assert isinstance(msg, LocationStatusMessage)
-                    session_manager.update_gps_status(cid, msg)
             except Exception:
                 logger.debug("Unhandled location WS message: %s", text[:100])
     except WebSocketDisconnect:
@@ -118,31 +115,12 @@ async def send_location(req: SendLocationRequest):
         raise HTTPException(status_code=404, detail=str(e))
 
 
-def _build_location_response(cid: str, loc: LocationUpdateMessage) -> dict:
-    """Build a location response with GPS verification data if available."""
-    result = loc.model_dump()
-    gps_status = session_manager.get_gps_status(cid)
-    if gps_status is not None:
-        result["gps_verification"] = {
-            "gps_accurate": gps_status.gps_accurate,
-            "gps_drift_meters": gps_status.gps_drift_meters,
-            "ios_reported_latitude": gps_status.ios_reported_latitude,
-            "ios_reported_longitude": gps_status.ios_reported_longitude,
-        }
-    else:
-        result["gps_verification"] = None
-    return result
-
-
 @app.get("/location")
 async def get_location(client_id: str = Query(default=None)):
-    """Get the most recently sent spoofed location + GPS verification status."""
+    """Get the most recently sent spoofed location."""
     if client_id:
         loc = _current_locations.get(client_id)
         if loc is None:
             raise HTTPException(status_code=404, detail="No location set for client")
-        return _build_location_response(client_id, loc)
-    return {
-        cid: _build_location_response(cid, loc)
-        for cid, loc in _current_locations.items()
-    }
+        return loc.model_dump()
+    return {cid: loc.model_dump() for cid, loc in _current_locations.items()}

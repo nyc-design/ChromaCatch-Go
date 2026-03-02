@@ -1,5 +1,4 @@
 import Combine
-import CoreLocation
 import Foundation
 
 /// Central orchestrator that coordinates EA, BLE, WebSockets, ESP32, and the NMEA dongle controller.
@@ -17,7 +16,6 @@ class AppCoordinator: ObservableObject {
     let wsManager: WebSocketManager         // Main backend (HID + status)
     let locationWSManager: WebSocketManager  // Location service (GPS coords)
     let esp32Client: ESP32HTTPClient
-    let locationMonitor: LocationMonitor
 
     @Published var logs: [LogEntry] = []
     @Published var isRunning = false
@@ -109,7 +107,6 @@ class AppCoordinator: ObservableObject {
             port: Int(savedESP32Port) ?? 80,
             log: logFn
         )
-        locationMonitor = LocationMonitor(log: logFn)
 
         coordinator = self
 
@@ -151,9 +148,7 @@ class AppCoordinator: ObservableObject {
 
         // Background keepalive: bluetooth-central mode keeps app alive
         // as long as BLE connection + FF02 notifications are active.
-
-        // Start GPS verification monitor (reads iOS-reported location for drift detection)
-        locationMonitor.startMonitoring()
+        // No CLLocationManager needed.
 
         // Monitor EA state
         startMonitoring()
@@ -168,7 +163,6 @@ class AppCoordinator: ObservableObject {
     func stop() {
         isRunning = false
         dongleController.stop()
-        locationMonitor.stopMonitoring()
         wsManager.disconnect()
         locationWSManager.disconnect()
         statusTimer?.invalidate()
@@ -262,8 +256,6 @@ class AppCoordinator: ObservableObject {
                 altitude: loc.altitude,
                 speed: loc.speedKnots, heading: loc.heading
             )
-            locationMonitor.targetLat = loc.latitude
-            locationMonitor.targetLon = loc.longitude
 
         case .ping:
             locationWSManager.sendJSON(HeartbeatPong())
@@ -328,34 +320,15 @@ class AppCoordinator: ObservableObject {
             commandsAcked: commandsAcked,
             currentLatitude: dongleController.currentLat != 0 ? dongleController.currentLat : nil,
             currentLongitude: dongleController.currentLon != 0 ? dongleController.currentLon : nil,
-            gpsAccurate: locationMonitor.isAccurate,
-            gpsDriftMeters: locationMonitor.driftMeters,
-            iosReportedLatitude: locationMonitor.iosReportedLat != 0 ? locationMonitor.iosReportedLat : nil,
-            iosReportedLongitude: locationMonitor.iosReportedLon != 0 ? locationMonitor.iosReportedLon : nil,
             uptimeSeconds: Date().timeIntervalSince(startTime)
         )
         wsManager.sendJSON(status)
-
-        // Also send GPS verification to location service so GET /location can report drift
-        if locationWSManager.isConnected && (locationMonitor.targetLat != 0 || locationMonitor.targetLon != 0) {
-            let locStatus = LocationStatusMessage(
-                gpsAccurate: locationMonitor.isAccurate,
-                gpsDriftMeters: locationMonitor.driftMeters,
-                iosReportedLat: locationMonitor.iosReportedLat,
-                iosReportedLon: locationMonitor.iosReportedLon,
-                targetLat: locationMonitor.targetLat,
-                targetLon: locationMonitor.targetLon
-            )
-            locationWSManager.sendJSON(locStatus)
-        }
     }
 
     // MARK: - Manual Control
 
     func sendManualLocation(lat: Double, lon: Double) {
         dongleController.updateCoordinates(lat: lat, lon: lon)
-        locationMonitor.targetLat = lat
-        locationMonitor.targetLon = lon
         addLog("Manual location set: \(lat), \(lon)")
     }
 

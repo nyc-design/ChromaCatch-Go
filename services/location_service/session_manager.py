@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from fastapi import WebSocket
 
-from shared.messages import LocationStatusMessage, LocationUpdateMessage
+from shared.messages import LocationUpdateMessage
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,6 @@ class LocationClientSession:
     websocket: WebSocket
     connected_at: float = field(default_factory=time.time)
     last_location: LocationUpdateMessage | None = None
-    last_gps_status: LocationStatusMessage | None = None
 
 
 class LocationSessionManager:
@@ -52,17 +51,6 @@ class LocationSessionManager:
             raise ValueError(f"No location client connected with id: {client_id}")
         await session.websocket.send_text(message.model_dump_json())
         session.last_location = message
-
-    def update_gps_status(self, client_id: str, status: LocationStatusMessage) -> None:
-        """Store the latest GPS verification status from a client."""
-        session = self._sessions.get(client_id)
-        if session is not None:
-            session.last_gps_status = status
-
-    def get_gps_status(self, client_id: str) -> LocationStatusMessage | None:
-        """Get the latest GPS verification status for a client."""
-        session = self._sessions.get(client_id)
-        return session.last_gps_status if session else None
 
     async def broadcast_location(self, message: LocationUpdateMessage) -> int:
         """Send a location update to all connected clients. Returns count sent."""

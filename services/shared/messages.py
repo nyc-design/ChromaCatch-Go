@@ -89,11 +89,6 @@ class ClientStatus(BaseMessage):
     srt_rtt_ms: float | None = None
     srt_bandwidth_kbps: float | None = None
     srt_packet_loss_pct: float | None = None
-    # GPS verification (iOS app: compares iOS-reported location vs spoofed target)
-    gps_accurate: bool | None = None
-    gps_drift_meters: float | None = None
-    ios_reported_latitude: float | None = None
-    ios_reported_longitude: float | None = None
 
 
 # --- Backend -> Client ---
@@ -144,18 +139,6 @@ class LocationUpdateMessage(BaseMessage):
     heading: float = 0.0
 
 
-class LocationStatusMessage(BaseMessage):
-    """GPS verification status from iOS app — reports what iOS actually sees."""
-
-    type: str = MessageType.LOCATION_STATUS
-    gps_accurate: bool = False
-    gps_drift_meters: float = 0.0
-    ios_reported_latitude: float = 0.0
-    ios_reported_longitude: float = 0.0
-    target_latitude: float = 0.0
-    target_longitude: float = 0.0
-
-
 # --- Bidirectional ---
 
 
@@ -184,7 +167,6 @@ _TYPE_MAP: dict[str, type[BaseMessage]] = {
     MessageType.COMMAND_ACK: CommandAck,
     MessageType.CONFIG_UPDATE: ConfigUpdate,
     MessageType.LOCATION_UPDATE: LocationUpdateMessage,
-    MessageType.LOCATION_STATUS: LocationStatusMessage,
     MessageType.PING: HeartbeatPing,
     MessageType.PONG: HeartbeatPong,
     MessageType.ERROR: ErrorMessage,

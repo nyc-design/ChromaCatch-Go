@@ -41,8 +41,6 @@ class MessageType:
     AUDIO_CHUNK = "audio_chunk"
     CLIENT_STATUS = "client_status"
 
-    LOCATION_STATUS = "location_status"
-
     # Backend -> Client
     HID_COMMAND = "hid_command"
     COMMAND_ACK = "command_ack"

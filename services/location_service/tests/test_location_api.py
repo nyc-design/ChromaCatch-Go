@@ -97,54 +97,9 @@ class TestGetLocationEndpoint:
             assert data["latitude"] == 33.448
             assert data["longitude"] == -96.789
             assert data["altitude"] == 200.0
-            # No GPS verification yet — should be null
-            assert data["gps_verification"] is None
         finally:
             loop.run_until_complete(session_manager.unregister("test-loc-get"))
             _current_locations.pop("test-loc-get", None)
-
-    def test_get_location_with_gps_verification(self):
-        """GET /location returns GPS verification data when iOS app reports status."""
-        from shared.messages import LocationStatusMessage
-
-        ws = AsyncMock()
-        import asyncio
-
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(session_manager.register("test-loc-gps", ws))
-        try:
-            client = TestClient(app)
-            # Send spoofed coordinates
-            client.post(
-                "/location",
-                json={
-                    "client_id": "test-loc-gps",
-                    "latitude": 35.6586,
-                    "longitude": 139.7454,
-                },
-            )
-            # Simulate iOS app reporting GPS verification status
-            gps_status = LocationStatusMessage(
-                gps_accurate=True,
-                gps_drift_meters=42.5,
-                ios_reported_latitude=35.6590,
-                ios_reported_longitude=139.7450,
-                target_latitude=35.6586,
-                target_longitude=139.7454,
-            )
-            session_manager.update_gps_status("test-loc-gps", gps_status)
-
-            response = client.get("/location?client_id=test-loc-gps")
-            assert response.status_code == 200
-            data = response.json()
-            assert data["latitude"] == 35.6586
-            assert data["gps_verification"] is not None
-            assert data["gps_verification"]["gps_accurate"] is True
-            assert data["gps_verification"]["gps_drift_meters"] == 42.5
-            assert data["gps_verification"]["ios_reported_latitude"] == 35.6590
-        finally:
-            loop.run_until_complete(session_manager.unregister("test-loc-gps"))
-            _current_locations.pop("test-loc-gps", None)
 
     def test_location_defaults(self):
         ws = AsyncMock()

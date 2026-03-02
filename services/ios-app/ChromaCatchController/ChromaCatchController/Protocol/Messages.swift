@@ -11,7 +11,6 @@ enum MessageType {
     static let commandAck = "command_ack"
     static let configUpdate = "config_update"
     static let locationUpdate = "location_update"
-    static let locationStatus = "location_status"
     static let error = "error"
     static let ping = "ping"
     static let pong = "pong"
@@ -199,11 +198,6 @@ struct ClientStatus: Codable {
     let dongleForwarding: Bool
     let currentLatitude: Double?
     let currentLongitude: Double?
-    // GPS verification (compares iOS-reported location vs spoofed target)
-    let gpsAccurate: Bool?
-    let gpsDriftMeters: Double?
-    let iosReportedLatitude: Double?
-    let iosReportedLongitude: Double?
     let timestamp: Double
     let protocolVersion: String
 
@@ -232,10 +226,6 @@ struct ClientStatus: Codable {
         case dongleForwarding = "dongle_forwarding"
         case currentLatitude = "current_latitude"
         case currentLongitude = "current_longitude"
-        case gpsAccurate = "gps_accurate"
-        case gpsDriftMeters = "gps_drift_meters"
-        case iosReportedLatitude = "ios_reported_latitude"
-        case iosReportedLongitude = "ios_reported_longitude"
         case protocolVersion = "protocol_version"
     }
 
@@ -247,8 +237,6 @@ struct ClientStatus: Codable {
          lastCommandRttMs: Double? = nil,
          audioChunksCaptured: Int = 0, audioChunksSent: Int = 0,
          currentLatitude: Double? = nil, currentLongitude: Double? = nil,
-         gpsAccurate: Bool? = nil, gpsDriftMeters: Double? = nil,
-         iosReportedLatitude: Double? = nil, iosReportedLongitude: Double? = nil,
          uptimeSeconds: Double = 0) {
         self.type = MessageType.clientStatus
         self.airplayRunning = false  // iOS doesn't use AirPlay
@@ -274,48 +262,6 @@ struct ClientStatus: Codable {
         self.dongleForwarding = dongleForwarding
         self.currentLatitude = currentLatitude
         self.currentLongitude = currentLongitude
-        self.gpsAccurate = gpsAccurate
-        self.gpsDriftMeters = gpsDriftMeters
-        self.iosReportedLatitude = iosReportedLatitude
-        self.iosReportedLongitude = iosReportedLongitude
-        self.timestamp = Date().timeIntervalSince1970
-        self.protocolVersion = "1.0"
-    }
-}
-
-/// GPS verification status — sent to location service to report what iOS actually sees.
-struct LocationStatusMessage: Codable {
-    let type: String
-    let gpsAccurate: Bool
-    let gpsDriftMeters: Double
-    let iosReportedLatitude: Double
-    let iosReportedLongitude: Double
-    let targetLatitude: Double
-    let targetLongitude: Double
-    let timestamp: Double
-    let protocolVersion: String
-
-    enum CodingKeys: String, CodingKey {
-        case type, timestamp
-        case gpsAccurate = "gps_accurate"
-        case gpsDriftMeters = "gps_drift_meters"
-        case iosReportedLatitude = "ios_reported_latitude"
-        case iosReportedLongitude = "ios_reported_longitude"
-        case targetLatitude = "target_latitude"
-        case targetLongitude = "target_longitude"
-        case protocolVersion = "protocol_version"
-    }
-
-    init(gpsAccurate: Bool, gpsDriftMeters: Double,
-         iosReportedLat: Double, iosReportedLon: Double,
-         targetLat: Double, targetLon: Double) {
-        self.type = MessageType.locationStatus
-        self.gpsAccurate = gpsAccurate
-        self.gpsDriftMeters = gpsDriftMeters
-        self.iosReportedLatitude = iosReportedLat
-        self.iosReportedLongitude = iosReportedLon
-        self.targetLatitude = targetLat
-        self.targetLongitude = targetLon
         self.timestamp = Date().timeIntervalSince1970
         self.protocolVersion = "1.0"
     }

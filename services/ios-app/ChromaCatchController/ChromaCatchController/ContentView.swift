@@ -40,7 +40,6 @@ struct StatusBar: View {
             StatusBadge(label: "BLE", connected: coordinator.bleManager.isConnected)
             StatusBadge(label: "CTL", connected: coordinator.wsManager.isConnected)
             StatusBadge(label: "LOC", connected: coordinator.locationWSManager.isConnected, activeColor: .blue)
-            StatusBadge(label: "GPS", connected: coordinator.locationMonitor.isAccurate, activeColor: .cyan)
             StatusBadge(label: "ESP", connected: coordinator.esp32Client.isReachable, activeColor: .purple)
             StatusBadge(
                 label: "FWD",
@@ -286,31 +285,12 @@ struct CoordinateSection: View {
 
             if coordinator.dongleController.currentLat != 0 {
                 HStack {
-                    Text("Target:")
+                    Text("Current:")
                         .foregroundColor(.secondary)
                     Text(String(format: "%.6f, %.6f",
                                 coordinator.dongleController.currentLat,
                                 coordinator.dongleController.currentLon))
                     .font(.system(.body, design: .monospaced))
-                }
-            }
-
-            if coordinator.locationMonitor.iosReportedLat != 0 {
-                HStack {
-                    Text("iOS:")
-                        .foregroundColor(.secondary)
-                    Text(String(format: "%.6f, %.6f",
-                                coordinator.locationMonitor.iosReportedLat,
-                                coordinator.locationMonitor.iosReportedLon))
-                    .font(.system(.body, design: .monospaced))
-                }
-
-                HStack {
-                    Text("Drift:")
-                        .foregroundColor(.secondary)
-                    Text(String(format: "%.0fm", coordinator.locationMonitor.driftMeters))
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundColor(driftColor(coordinator.locationMonitor.driftMeters))
                 }
             }
 
@@ -350,12 +330,6 @@ struct CoordinateSection: View {
     private func sendParsedCoords() {
         guard let (lat, lon) = parseCoords() else { return }
         coordinator.sendManualLocation(lat: lat, lon: lon)
-    }
-
-    private func driftColor(_ meters: Double) -> Color {
-        if meters <= 100 { return .green }
-        if meters <= 500 { return .yellow }
-        return .red
     }
 }
 
