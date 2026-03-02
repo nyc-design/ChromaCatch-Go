@@ -131,6 +131,10 @@ class H264Encoder {
         }
 
         frameCount += 1
+        if frameCount <= 3 || frameCount % 300 == 0 {
+            NSLog("[H264Encoder] encoded frame #%d, keyframe=%@, size=%d bytes",
+                  frameCount, isKeyframe ? "YES" : "no", annexBData.count)
+        }
         onEncodedAU?(annexBData, isKeyframe, captureTimestamp)
     }
 

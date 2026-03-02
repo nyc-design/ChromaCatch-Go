@@ -10,6 +10,7 @@ import UIKit
 class SampleHandler: RPBroadcastSampleHandler {
     private var encoder: H264Encoder?
     private var wsClient: BroadcastWSClient?
+    private var sampleCount: Int = 0
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
         // Read configuration from App Group shared defaults
@@ -72,6 +73,14 @@ class SampleHandler: RPBroadcastSampleHandler {
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
         switch sampleBufferType {
         case .video:
+            sampleCount += 1
+            if sampleCount <= 3 || sampleCount % 300 == 0 {
+                NSLog("[SampleHandler] video sample #%d, encoder=%@, ws=%@(connected=%d)",
+                      sampleCount,
+                      encoder != nil ? "yes" : "nil",
+                      wsClient != nil ? "yes" : "nil",
+                      wsClient?.isConnected == true ? 1 : 0)
+            }
             encoder?.encode(sampleBuffer)
 
         case .audioApp:

@@ -80,8 +80,17 @@ class BroadcastWSClient: NSObject, URLSessionWebSocketDelegate {
         if isKeyframe {
             pendingKeyframe = (data: auData, timestamp: captureTimestamp)
         }
-        guard isConnected else { return }
+        guard isConnected else {
+            if sequence == 0 {
+                NSLog("[BroadcastWS] sendH264AU: not connected, dropping (kf=%@)", isKeyframe ? "YES" : "no")
+            }
+            return
+        }
         sequence += 1
+        if sequence <= 3 || sequence % 300 == 0 {
+            NSLog("[BroadcastWS] sending AU #%d, kf=%@, %d bytes, connected=%d",
+                  sequence, isKeyframe ? "YES" : "no", auData.count, isConnected ? 1 : 0)
+        }
 
         let metadata = H264FrameMetadata(
             sequence: sequence,
