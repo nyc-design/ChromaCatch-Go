@@ -164,7 +164,8 @@ ChromaCatch-Go/
 │   │       │   │   ├── BLEManager.swift           # CoreBluetooth central (FF12 service)
 │   │       │   │   ├── EAManager.swift            # External Accessory session (MFi gate)
 │   │       │   │   ├── WebSocketManager.swift     # URLSessionWebSocketTask (dual WS)
-│   │       │   │   └── LocationKeepAlive.swift    # CLLocationManager background keepalive
+│   │       │   │   ├── LocationMonitor.swift      # CLLocationManager GPS verification + drift recovery
+│   │       │   │   └── DNSFilterManager.swift     # NETunnelProviderManager DNS sinkhole toggle
 │   │       │   ├── Networking/
 │   │       │   │   └── ESP32HTTPClient.swift      # HTTP POST /command to ESP32 (HID relay)
 │   │       │   ├── Dongle/
@@ -172,12 +173,16 @@ ChromaCatch-Go/
 │   │       │   │   └── DongleController.swift     # AT+CN/RP init + NMEA loop
 │   │       │   └── Protocol/
 │   │       │       └── Messages.swift             # Swift mirror of shared/messages.py (full protocol)
-│   │       └── ChromaCatchBroadcast/              # ReplayKit Broadcast Upload Extension
-│   │           ├── SampleHandler.swift            # RPBroadcastSampleHandler (screen capture → H.264)
-│   │           ├── H264Encoder.swift              # VideoToolbox encoder (AVCC → Annex-B)
-│   │           ├── BroadcastWSClient.swift        # Simplified WS client (h264-ws protocol)
-│   │           ├── Info.plist                     # Extension config (broadcast-services-upload)
-│   │           └── ChromaCatchBroadcast.entitlements  # App Group (group.com.chromacatch)
+│   │       ├── ChromaCatchBroadcast/              # ReplayKit Broadcast Upload Extension
+│   │       │   ├── SampleHandler.swift            # RPBroadcastSampleHandler (screen capture → H.264)
+│   │       │   ├── H264Encoder.swift              # VideoToolbox encoder (AVCC → Annex-B)
+│   │       │   ├── BroadcastWSClient.swift        # Simplified WS client (h264-ws protocol)
+│   │       │   ├── Info.plist                     # Extension config (broadcast-services-upload)
+│   │       │   └── ChromaCatchBroadcast.entitlements  # App Group (group.com.chromacatch)
+│   │       └── ChromaCatchDNS/                    # NEPacketTunnelProvider DNS Filter Extension
+│   │           ├── PacketTunnelProvider.swift      # DNS sinkhole for Apple location domains
+│   │           ├── Info.plist                     # Extension config (packet-tunnel)
+│   │           └── ChromaCatchDNS.entitlements    # packet-tunnel-provider + App Group
 │   └── esp32/                               # ESP32 firmware
 │       ├── platformio.ini
 │       └── src/main.cpp                     # BLE HID + WiFi HTTP server
@@ -259,6 +264,8 @@ ChromaCatch-Go/
 - [x] iOS Protocol/Messages.swift aligned with full Python protocol (CommandAck, H264FrameMetadata, AudioChunkMetadata, ClientStatus)
 - [x] ReplayKit Broadcast Upload Extension (H.264 via VideoToolbox → h264-ws protocol over WebSocket)
 - [x] App Group IPC (shared UserDefaults between main app and broadcast extension)
+- [x] GPS location verification (LocationMonitor: CLLocationManager polling + haversine drift + auto-recovery)
+- [x] DNS filter extension (NEPacketTunnelProvider sinkhole for Apple Wi-Fi/cell positioning domains)
 - [x] 265 tests passing (8 new location service tests, 7 removed from backend)
 - [ ] On-device testing: verify EA session activates dongle GPS forwarding (RP status `>`)
 - [ ] End-to-end: location service POST /location → iOS app WS → BLE NMEA → iPhone location change
