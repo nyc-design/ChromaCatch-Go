@@ -7,11 +7,20 @@ import Foundation
 /// Uses `requestLocation()` on a timer (not `startUpdatingLocation()`) with
 /// `kCLLocationAccuracyHundredMeters` to avoid interfering with the iTools
 /// dongle's spoofed location feed.
+///
+/// When drift is detected, performs an aggressive "nuclear refresh":
+/// destroys and recreates CLLocationManager entirely, temporarily uses
+/// `kCLLocationAccuracyBestForNavigation` to force a fresh GPS fix,
+/// then reverts to normal polling mode.
 class LocationMonitor: NSObject, ObservableObject, CLLocationManagerDelegate {
-    private let manager = CLLocationManager()
+    private var manager: CLLocationManager!
     private var pollTimer: Timer?
     private var consecutiveDriftCount = 0
     private let log: (String) -> Void
+
+    /// True while performing an aggressive refresh (continuous updates at max accuracy).
+    private var isRefreshing = false
+    private var refreshTimer: Timer?
 
     /// What iOS actually reports as the device location.
     @Published var iosReportedLat: Double = 0
@@ -36,6 +45,7 @@ class LocationMonitor: NSObject, ObservableObject, CLLocationManagerDelegate {
     init(log: @escaping (String) -> Void = { NSLog("[LocationMonitor] %@", $0) }) {
         self.log = log
         super.init()
+        manager = CLLocationManager()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
     }
@@ -61,19 +71,60 @@ class LocationMonitor: NSObject, ObservableObject, CLLocationManagerDelegate {
     func stopMonitoring() {
         pollTimer?.invalidate()
         pollTimer = nil
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        isRefreshing = false
+        manager.stopUpdatingLocation()
         log("Location polling stopped")
     }
 
-    /// Force iOS to re-acquire location from the dongle by stopping and
-    /// restarting the location manager. This is the programmatic equivalent
-    /// of toggling Location Services.
+    /// Aggressive location reset: destroys and recreates CLLocationManager,
+    /// temporarily uses kCLLocationAccuracyBestForNavigation with continuous
+    /// updates to force iOS to acquire a fresh GPS fix from the dongle,
+    /// then reverts to normal polling after a few seconds.
     func forceRefresh() {
-        log("Force-refreshing location (stop + restart CLLocationManager)")
-        manager.stopUpdatingLocation()
+        guard !isRefreshing else { return }
+        isRefreshing = true
         consecutiveDriftCount = 0
-        // Brief delay before re-requesting
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.requestOnce()
+
+        log("Nuclear refresh: destroying CLLocationManager")
+
+        // 1. Pause normal polling
+        pollTimer?.invalidate()
+        pollTimer = nil
+
+        // 2. Destroy the old manager completely
+        manager.stopUpdatingLocation()
+        manager.delegate = nil
+        manager = nil
+
+        // 3. Wait 1 second, then create a fresh manager at max accuracy
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self = self else { return }
+
+            self.log("Nuclear refresh: creating new CLLocationManager (BestForNavigation)")
+            self.manager = CLLocationManager()
+            self.manager.delegate = self
+            self.manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+
+            // 4. Use continuous updates (not requestLocation) to force fresh GPS
+            self.manager.startUpdatingLocation()
+
+            // 5. After 5 seconds, revert to normal polling mode
+            self.refreshTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
+                guard let self = self else { return }
+                self.log("Nuclear refresh complete, reverting to normal polling")
+
+                self.manager.stopUpdatingLocation()
+                self.manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+                self.isRefreshing = false
+
+                // Resume normal 5s polling
+                self.requestOnce()
+                self.pollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+                    self?.requestOnce()
+                }
+            }
         }
     }
 
