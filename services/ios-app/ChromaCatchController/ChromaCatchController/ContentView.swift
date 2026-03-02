@@ -1,28 +1,6 @@
 import ReplayKit
 import SwiftUI
 
-// MARK: - Keyboard Dismiss Helper
-
-/// A UIKit-backed gesture that dismisses the keyboard without blocking other taps.
-struct DismissKeyboardGesture: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView(frame: .zero)
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.dismiss))
-        tap.cancelsTouchesInView = false  // Don't block buttons/text fields
-        view.addGestureRecognizer(tap)
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    class Coordinator {
-        @objc func dismiss() {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        }
-    }
-}
-
 // MARK: - Content View
 
 struct ContentView: View {
@@ -30,26 +8,21 @@ struct ContentView: View {
 
     var body: some View {
         NavigationView {
-            ZStack {
-                // Invisible layer to catch taps for keyboard dismiss
-                DismissKeyboardGesture()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 0) {
+                StatusBar()
 
-                VStack(spacing: 0) {
-                    StatusBar()
-
-                    ScrollView {
-                        VStack(spacing: 16) {
-                            SettingsSection()
-                            DongleSection()
-                            BroadcastSection()
-                            CoordinateSection()
-                            DongleInfoSection()
-                            LogSection()
-                        }
-                        .padding()
+                ScrollView {
+                    VStack(spacing: 16) {
+                        SettingsSection()
+                        DongleSection()
+                        BroadcastSection()
+                        CoordinateSection()
+                        DongleInfoSection()
+                        LogSection()
                     }
+                    .padding()
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle("ChromaCatch")
             .navigationBarTitleDisplayMode(.inline)
@@ -64,7 +37,6 @@ struct StatusBar: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            StatusBadge(label: "EA", connected: coordinator.eaManager.isConnected)
             StatusBadge(label: "BLE", connected: coordinator.bleManager.isConnected)
             StatusBadge(label: "CTL", connected: coordinator.wsManager.isConnected)
             StatusBadge(label: "LOC", connected: coordinator.locationWSManager.isConnected, activeColor: .blue)

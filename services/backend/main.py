@@ -264,8 +264,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         .status-item .value { font-size: 1.1em; font-weight: bold; }
         .ok { color: #4ecca3; }
         .fail { color: #e94560; }
-        .stream-container { position: relative; display: inline-block; }
-        .stream { max-width: 100%; border-radius: 4px; background: #000; }
+        .stream-container { position: relative; display: inline-block; max-width: 100%; }
+        .stream { max-width: 100%; max-height: 80vh; border-radius: 4px; background: #000; object-fit: contain; }
         .stream-badge { position: absolute; top: 8px; right: 8px; padding: 3px 8px; border-radius: 4px;
                         font-size: 0.75em; font-weight: bold; color: #fff; }
         .badge-webrtc { background: #4ecca3; }
@@ -382,8 +382,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                             <div class="status">${statusHtml}</div>
                             <h3>Live Stream</h3>
                             <div class="stream-container">
-                                <video id="webrtc-${clientId}" class="stream" autoplay muted playsinline width="640" style="display:none"></video>
-                                <img id="mjpeg-${clientId}" class="stream" src="/stream/${clientId}" alt="Waiting for frames..." width="640">
+                                <video id="webrtc-${clientId}" class="stream" autoplay muted playsinline style="display:none; width:auto; height:auto;"></video>
+                                <img id="mjpeg-${clientId}" class="stream" src="/stream/${clientId}" alt="Waiting for frames...">
                                 <span id="badge-${clientId}" class="stream-badge badge-mjpeg">MJPEG</span>
                             </div>
                             <button id="unmute-${clientId}" style="display:none; margin-top:8px; padding:6px 16px; border:1px solid #4ecca3; background:transparent; color:#4ecca3; border-radius:4px; cursor:pointer;" onclick="toggleMute('${clientId}')">Unmute Audio</button>

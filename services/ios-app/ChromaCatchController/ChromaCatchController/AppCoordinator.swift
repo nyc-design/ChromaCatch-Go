@@ -187,10 +187,12 @@ class AppCoordinator: ObservableObject {
             }
         }
 
-        // Periodic ESP32 ping
-        esp32PingTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            Task { _ = await self.esp32Client.ping() }
+        // Periodic ESP32 ping — only when a real host is configured (not default placeholder)
+        if !esp32Host.isEmpty && esp32Host != "192.168.1.100" {
+            esp32PingTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                Task { _ = await self.esp32Client.ping() }
+            }
         }
     }
 
