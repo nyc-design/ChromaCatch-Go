@@ -62,6 +62,7 @@ class SampleHandler: RPBroadcastSampleHandler {
     }
 
     override func broadcastFinished() {
+        NSLog("[SampleHandler] broadcastFinished — stopping encoder and disconnecting WS")
         encoder?.stop()
         wsClient?.disconnect()
         encoder = nil

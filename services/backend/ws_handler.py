@@ -57,6 +57,11 @@ class WebSocketHandler:
             websocket,
             channel=channel,
         )
+        # Reset H.264 decoder on new frame channel — stale state from previous
+        # broadcast session would reject all P-frames until next keyframe.
+        if channel == "frame" and resolved_client_id in self._h264_decoders:
+            self._h264_decoders[resolved_client_id].reset()
+            logger.info("H.264 decoder reset for reconnected client %s", resolved_client_id)
         logger.info("Client %s connected (channel=%s)", resolved_client_id, channel)
 
         try:
@@ -69,9 +74,18 @@ class WebSocketHandler:
         except Exception as e:
             logger.error("Client %s error (channel=%s): %s", resolved_client_id, channel, e)
         finally:
-            await self._session_manager.unregister(resolved_client_id, channel=channel)
-            if channel == "frame":
-                self._h264_decoders.pop(resolved_client_id, None)
+            # Only clean up if this websocket is still the registered one.
+            # A newer connection may have already replaced us — don't clobber it.
+            current_session = self._session_manager.get_session(resolved_client_id)
+            current_ws = None
+            if current_session is not None:
+                current_ws = current_session.control_websocket if channel == "control" else current_session.frame_websocket
+            if current_ws is websocket:
+                await self._session_manager.unregister(resolved_client_id, channel=channel)
+                if channel == "frame":
+                    self._h264_decoders.pop(resolved_client_id, None)
+            else:
+                logger.info("Client %s: skipping cleanup, connection already replaced (channel=%s)", resolved_client_id, channel)
 
     async def _frame_message_loop(
         self,

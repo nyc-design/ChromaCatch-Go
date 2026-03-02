@@ -13,6 +13,9 @@ class BroadcastWSClient: NSObject, URLSessionWebSocketDelegate {
     private var clientId: String
     private(set) var isConnected = false
     private var sequence: Int = 0
+    /// Buffers the most recent keyframe so it can be sent immediately on (re)connect.
+    /// Without this, the first keyframe is dropped because the WS isn't connected yet.
+    private var pendingKeyframe: (data: Data, timestamp: Double)?
 
     init(url: URL, apiKey: String = "", clientId: String = "ios-broadcast") {
         self.url = url
@@ -51,10 +54,16 @@ class BroadcastWSClient: NSObject, URLSessionWebSocketDelegate {
     func disconnect() {
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         isConnected = false
+        pendingKeyframe = nil
     }
 
     /// Send an H.264 Access Unit — exact same protocol as Python `WebSocketClient.send_h264_au()`.
     func sendH264AU(_ auData: Data, isKeyframe: Bool, captureTimestamp: Double) {
+        // Buffer keyframes so we can replay on connect (the first keyframe
+        // almost always arrives before the WebSocket handshake completes).
+        if isKeyframe {
+            pendingKeyframe = (data: auData, timestamp: captureTimestamp)
+        }
         guard isConnected else { return }
         sequence += 1
 
@@ -107,8 +116,9 @@ class BroadcastWSClient: NSObject, URLSessionWebSocketDelegate {
                 // We don't expect incoming messages on the frame channel,
                 // but keep receiving to maintain the connection
                 self.startReceiveLoop()
-            case .failure:
+            case .failure(let error):
                 self.isConnected = false
+                NSLog("[BroadcastWS] Receive failed: %@, reconnecting in 3s", error.localizedDescription)
                 // Auto-reconnect after 3 seconds
                 DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) { [weak self] in
                     self?.connect()
@@ -122,11 +132,18 @@ class BroadcastWSClient: NSObject, URLSessionWebSocketDelegate {
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
                     didOpenWithProtocol protocol: String?) {
         isConnected = true
+        NSLog("[BroadcastWS] Connected")
+        // Flush buffered keyframe so the decoder can start immediately
+        if let kf = pendingKeyframe {
+            pendingKeyframe = nil
+            sendH264AU(kf.data, isKeyframe: true, captureTimestamp: kf.timestamp)
+        }
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
                     reason: Data?) {
+        NSLog("[BroadcastWS] Closed with code: %d", closeCode.rawValue)
         isConnected = false
     }
 }
