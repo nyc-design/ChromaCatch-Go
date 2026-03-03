@@ -247,7 +247,7 @@ class BLEHIDCommander: NSObject, ObservableObject {
     /// Connected centrals will need to reconnect after the switch.
     func switchProfile(_ profile: HIDProfile) {
         let wasRunning = peripheralManager != nil
-        hidLog.info("Switching HID profile: \(currentProfile.rawValue) → \(profile.rawValue)")
+        hidLog.info("Switching HID profile: \(self.currentProfile.rawValue) → \(profile.rawValue)")
         if wasRunning { stop() }
         // Brief delay to let BLE stack clean up before re-advertising
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
@@ -352,7 +352,7 @@ class BLEHIDCommander: NSObject, ObservableObject {
 
     private func setupServices() {
         guard let pm = peripheralManager else { return }
-        hidLog.info("Setting up GATT services for profile: \(currentProfile.rawValue)")
+        hidLog.info("Setting up GATT services for profile: \(self.currentProfile.rawValue)")
 
         pm.removeAllServices()
         servicesAdded = 0
@@ -501,7 +501,7 @@ extension BLEHIDCommander: CBPeripheralManagerDelegate {
         hidLog.info("Service added: \(service.uuid)")
         servicesAdded += 1
         if servicesAdded >= totalServices {
-            hidLog.info("All \(totalServices) services added — starting advertising")
+            hidLog.info("All \(self.totalServices) services added — starting advertising")
             startAdvertising()
         }
     }
