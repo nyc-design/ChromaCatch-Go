@@ -146,11 +146,12 @@ void initBLE() {
     NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);  // "Just Works" pairing
 
     if (currentOutputMode == OUTPUT_MOUSE_KB) {
-        bleMouse    = new BleMouse(DEVICE_NAME, "ChromaCatch", 100);
-        bleKeyboard = new BleKeyboard(DEVICE_NAME, "ChromaCatch", 100);
+        bleMouse = new BleMouse(DEVICE_NAME, "ChromaCatch", 100);
         bleMouse->begin();
-        bleKeyboard->begin();
-        Serial.println("BLE Mouse+Keyboard started");
+        // Note: BleKeyboard disabled — separate NimBLE HID libraries can't share
+        // the server callback, so mouse loses connection notifications. Keyboard
+        // support will require a combined HID library.
+        Serial.println("BLE Mouse started (keyboard disabled)");
     } else {
         bleGamepad = new BleGamepad(DEVICE_NAME, "ChromaCatch", 100);
         BleGamepadConfiguration cfg;
