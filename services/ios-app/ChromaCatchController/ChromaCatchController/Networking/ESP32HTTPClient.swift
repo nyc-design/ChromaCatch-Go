@@ -49,8 +49,8 @@ class ESP32HTTPClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         var body: [String: Any] = ["action": action]
-        if !params.isEmpty {
-            body["params"] = params
+        for (key, value) in params {
+            body[key] = value
         }
 
         guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else {
