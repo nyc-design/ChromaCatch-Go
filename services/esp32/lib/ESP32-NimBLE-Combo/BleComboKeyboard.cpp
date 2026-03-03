@@ -159,16 +159,21 @@ void BleComboKeyboard::setBatteryLevel(uint8_t level) {
 
 void BleComboKeyboard::taskServer(void* pvParameter) {
   BleComboKeyboard* bleKeyboardInstance = (BleComboKeyboard *) pvParameter;
+  Serial.println("[BLE] taskServer: init NimBLE...");
   NimBLEDevice::init(bleKeyboardInstance->deviceName);
 
   // Configure security for iOS HID pairing (NimBLE v2 API)
   NimBLEDevice::setSecurityAuth(true, false, true);   // bonding, no MITM, secure connections
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);  // "Just Works" pairing
 
+  Serial.println("[BLE] taskServer: creating server...");
   NimBLEServer *pServer = NimBLEDevice::createServer();
   pServer->setCallbacks(bleKeyboardInstance->connectionStatus);
 
+  Serial.println("[BLE] taskServer: creating HID device...");
   bleKeyboardInstance->hid = new NimBLEHIDDevice(pServer);
+
+  Serial.println("[BLE] taskServer: creating report characteristics...");
   bleKeyboardInstance->inputKeyboard = bleKeyboardInstance->hid->getInputReport(KEYBOARD_ID);
   bleKeyboardInstance->outputKeyboard = bleKeyboardInstance->hid->getOutputReport(KEYBOARD_ID);
   bleKeyboardInstance->inputMediaKeys = bleKeyboardInstance->hid->getInputReport(MEDIA_KEYS_ID);
@@ -182,20 +187,21 @@ void BleComboKeyboard::taskServer(void* pvParameter) {
   bleKeyboardInstance->outputKeyboard->setCallbacks(new KeyboardOutputCallbacks());
 
   bleKeyboardInstance->hid->setManufacturer(bleKeyboardInstance->deviceManufacturer);
-
   bleKeyboardInstance->hid->setPnp(0x02, 0xe502, 0xa111, 0x0210);
   bleKeyboardInstance->hid->setHidInfo(0x00, 0x01);
 
+  Serial.println("[BLE] taskServer: setting report map + starting services...");
   bleKeyboardInstance->hid->setReportMap((uint8_t*)_hidReportDescriptor, sizeof(_hidReportDescriptor));
   bleKeyboardInstance->hid->startServices();
 
+  Serial.println("[BLE] taskServer: starting advertising...");
   NimBLEAdvertising *pAdvertising = pServer->getAdvertising();
   pAdvertising->setAppearance(HID_KEYBOARD);
   pAdvertising->addServiceUUID(bleKeyboardInstance->hid->getHidService()->getUUID());
   pAdvertising->start();
   bleKeyboardInstance->hid->setBatteryLevel(bleKeyboardInstance->batteryLevel);
 
-  ESP_LOGD(LOG_TAG, "Advertising started!");
+  Serial.println("[BLE] taskServer: advertising started OK!");
   vTaskDelay(portMAX_DELAY);
 }
 
