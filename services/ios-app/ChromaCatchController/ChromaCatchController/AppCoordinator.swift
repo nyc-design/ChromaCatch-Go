@@ -65,10 +65,16 @@ class AppCoordinator: ObservableObject {
         }
     }
     @Published var esp32Host: String {
-        didSet { UserDefaults.standard.set(esp32Host, forKey: "esp32Host") }
+        didSet {
+            UserDefaults.standard.set(esp32Host, forKey: "esp32Host")
+            esp32Client.updateEndpoint(host: esp32Host, port: Int(esp32Port) ?? 80)
+        }
     }
     @Published var esp32Port: String {
-        didSet { UserDefaults.standard.set(esp32Port, forKey: "esp32Port") }
+        didSet {
+            UserDefaults.standard.set(esp32Port, forKey: "esp32Port")
+            esp32Client.updateEndpoint(host: esp32Host, port: Int(esp32Port) ?? 80)
+        }
     }
     @Published var clientId: String {
         didSet {

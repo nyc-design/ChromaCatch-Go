@@ -407,17 +407,17 @@ void handleSetMode() {
 
     bool changed = false;
 
-    if (doc.containsKey("input_mode")) {
+    if (doc["input_mode"].is<const char*>()) {
         String val = doc["input_mode"].as<String>();
         InputMode newMode = (val == "serial") ? INPUT_SERIAL : INPUT_WIFI;
         if (newMode != currentInput) { currentInput = newMode; changed = true; }
     }
-    if (doc.containsKey("output_delivery")) {
+    if (doc["output_delivery"].is<const char*>()) {
         String val = doc["output_delivery"].as<String>();
         OutputDelivery newDel = (val == "wired") ? OUTPUT_WIRED : OUTPUT_BLUETOOTH;
         if (newDel != currentOutput) { currentOutput = newDel; changed = true; }
     }
-    if (doc.containsKey("output_mode")) {
+    if (doc["output_mode"].is<const char*>()) {
         String val = doc["output_mode"].as<String>();
         OutputMode newMode = (val == "gamepad") ? OUTPUT_GAMEPAD : OUTPUT_MOUSE_KB;
         if (newMode != currentOutputMode) { currentOutputMode = newMode; changed = true; }
