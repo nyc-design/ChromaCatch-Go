@@ -319,9 +319,13 @@ ChromaCatch-Go/
 - [x] Luma3DSCommander — Luma3DS input redirect for modded 3DS (UDP binary packets)
 - [x] VirtualGamepadCommander — uinput (Linux) / ViGEm (Windows) for emulators
 - [x] 357 tests passing (92 new commander + WebRTC + forwarder tests)
+- [ ] RTP+FEC transport (custom UDP + Reed-Solomon FEC via zfec — lowest latency, game-streaming-grade)
+- [ ] RTP+FEC receiver (backend asyncio UDP + FEC recovery + AU reassembly)
 - [ ] SysDVR frame source (H.264 from modded Switch via TCP/RTSP)
 - [ ] NTR frame source (TurboJPEG over UDP from modded 3DS)
+- [ ] ESP32 e-ink display + buttons for mode selection (input: WiFi/wired, output: BT/wired, mode: mouse+kb/gamepad)
 - [ ] ESP32 gamepad firmware mode (ESP32-BLE-Gamepad)
+- [ ] iOS BLE HID commander (CBPeripheralManager with expanded 128-bit UUID — act as BLE mouse/kb/gamepad to non-Apple hosts)
 - [ ] iOS WebRTC transport (WebRTC.framework)
 - [ ] DSU/Cemuhook commander for emulator motion input
 
