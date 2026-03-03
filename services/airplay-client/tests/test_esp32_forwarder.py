@@ -1,8 +1,13 @@
-"""Tests for ESP32 command forwarder."""
+"""Tests for ESP32 command forwarder (backward compatibility).
+
+These tests verify the ESP32Forwarder alias works with the generalized
+CommandForwarder, routing HIDCommandMessage through ESP32Commander.
+"""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
+from airplay_client.commander.esp32_commander import ESP32Commander
 from airplay_client.esp32_forwarder import ESP32Forwarder
 from shared.messages import HIDCommandMessage
 
@@ -12,11 +17,14 @@ class TestESP32Forwarder:
     def mock_esp32(self):
         esp32 = MagicMock()
         esp32.send_command = AsyncMock(return_value={"status": "ok"})
+        esp32.host = "192.168.1.100"
+        esp32.port = 80
         return esp32
 
     @pytest.fixture
     def forwarder(self, mock_esp32):
-        return ESP32Forwarder(mock_esp32)
+        commander = ESP32Commander(esp32_client=mock_esp32)
+        return ESP32Forwarder(commander)
 
     @pytest.mark.asyncio
     async def test_forward_click(self, forwarder, mock_esp32):

@@ -5,25 +5,27 @@ Automated shiny hunting bot for Pokemon Go using AirPlay screen mirroring, compu
 ## Architecture Overview
 
 ```
- [Local Network]                                     [Cloud / Remote]
-┌──────────┐  AirPlay   ┌──────────────────────┐        ┌───────────────────────┐
-│  iPhone   │ ────────► │   Local Client        │        │  Remote Backend       │
-│(Pkmn Go)  │           │                      │  SRT   │                       │
-└──────────┘           │  UxPlay ─── H.264 ────┼──────►│  MediaMTX (SRT→RTSP)  │
-      ▲                 │  (RTP)    passthru    │  or   │       │               │
-      │ BLE HID         │           + Opus audio│  WS   │  RTSP consumer → CV   │
-      │                 │                      │ (JPEG) │       │               │
-      │                 │  ESP32Forwarder ◄────┤◄──────┤  Orchestrator          │
-      │                 └──────────┬───────────┘  cmds  └───────────────────────┘
-      │                            │ HTTP            (WS control channel always)
-┌─────┴──────┐◄────────────────────┘
-│   ESP32    │
-│ (BLE HID)  │
-└────────────┘
+ [Source]              [Local Client]                  [Remote Backend]
+┌──────────┐ AirPlay  ┌───────────────────────┐       ┌───────────────────────┐
+│  iPhone   │────────►│  UxPlay ─── H.264 ────┼──────►│  MediaMTX (→RTSP)     │
+│  Switch   │ SysDVR  │  (RTP)    passthru    │ SRT/  │       │               │
+│  3DS      │ NTR     │           + Opus audio│ WebRTC│  RTSP consumer → CV   │
+│  Emulator │ Screen  │                       │ or WS │       │               │
+└──────────┘         │  CommandForwarder ◄───┤◄──────┤  Orchestrator          │
+      ▲               └──────────┬────────────┘ cmds  └───────────────────────┘
+      │                          │ Commander            (WS control always)
+      │                          ▼
+┌─────┴──────────────────────────────────┐
+│  Commander targets:                     │
+│  • ESP32 (BLE HID mouse/kb/gamepad)    │
+│  • sys-botbase (Switch TCP)            │
+│  • Luma3DS (3DS UDP)                   │
+│  • Virtual gamepad (uinput/ViGEm)      │
+└─────────────────────────────────────────┘
 ```
 
 ### Service Architecture
-- **Airplay Client** (`services/airplay-client/`): Runs on the same network as iPhone + ESP32. Manages AirPlay reception, delivers media to the backend (via SRT or WebSocket), and relays HID commands from the backend to the ESP32. Deployed as a CLI tool.
+- **Airplay Client** (`services/airplay-client/`): Runs near the source device. Manages video capture (AirPlay, SysDVR, NTR, screen capture), delivers media to the backend (via WebRTC, SRT, or WebSocket), and routes commands from the backend to the target device via pluggable Commander interface (ESP32, sys-botbase, Luma3DS, virtual gamepad). Deployed as a CLI tool.
 - **iOS Controller App** (`services/ios-app/`): Native iPhone app — full drop-in replacement for the CLI airplay-client. Controls iTools BT GPS dongle (EA session + BLE NMEA), relays HID commands to ESP32 via HTTP, and broadcasts screen via ReplayKit (H.264 over WebSocket, same h264-ws protocol as CLI). Connects to both main backend (`/ws/control`) and location service (`/ws/location`).
 - **Location Service** (`services/location_service/`): Standalone FastAPI service on port 8001. Decouples GPS coordinate management from the video/HID pipeline. iOS apps connect via WebSocket to receive coordinates; orchestrator or manual `POST /location` pushes coordinates.
 - **Remote Backend** (`services/backend/`): Runs in the cloud (Cloud Run, VM, etc.). Receives frames (via RTSP from MediaMTX or WebSocket), runs CV analysis, makes decisions, and sends HID commands back through WebSocket control channel.
@@ -32,7 +34,14 @@ Automated shiny hunting bot for Pokemon Go using AirPlay screen mirroring, compu
 
 ### Media Transport Modes
 
-The client supports three transport modes for video/audio delivery, configurable via `CC_CLIENT_TRANSPORT_MODE`:
+The client supports multiple transport modes for video/audio delivery, configurable via `CC_CLIENT_TRANSPORT_MODE`:
+
+**WebRTC Mode** (`transport_mode=webrtc`) — Lowest latency, recommended for game streaming:
+1. UxPlay decrypts AirPlay H.264 stream → RTP over localhost UDP
+2. GStreamer subprocess with `whipclientsink` forwards H.264 + Opus via WHIP to MediaMTX
+3. MediaMTX serves as RTSP (for CV pipeline) and WebRTC/WHEP (for dashboard)
+4. ICE/STUN/TURN for NAT traversal — works across networks
+5. No decode/re-encode on client — Python never touches frame data
 
 **SRT Mode** (`transport_mode=srt`) — Low-latency, recommended for UDP-capable hosts:
 1. UxPlay decrypts AirPlay H.264 stream → RTP over localhost UDP
@@ -61,14 +70,29 @@ The client supports three transport modes for video/audio delivery, configurable
 
 ### WebSocket Protocol
 - **Frames (client → backend)**: Two-message pattern — JSON `FrameMetadata` followed by binary JPEG bytes (WS mode) or JSON `H264FrameMetadata` followed by binary H.264 AU bytes (h264-ws mode)
-- **Commands (backend → client)**: JSON `HIDCommandMessage` with action + params (+ command id/sequence)
-- **Command ACKs (client → backend)**: JSON `CommandAck` after ESP32 forward attempt
+- **Commands (backend → client)**: JSON `HIDCommandMessage` (legacy) or `GameCommandMessage` (universal) with action + params
+- **Command ACKs (client → backend)**: JSON `CommandAck` after command forward attempt
 - **Audio (client → backend)**: JSON `AudioChunk` metadata + binary PCM payload
 - **Status (client → backend)**: Periodic JSON `ClientStatus` updates
 - **Channel split**:
   - `/ws/client` = frame/status channel
   - `/ws/control` = low-jitter command/ack channel (with backend fallback to frame channel)
 - **Auth**: API key via query param or Authorization header
+
+### Commander Abstraction
+
+The client uses a pluggable `Commander` interface to route commands to different target devices. Configurable via `CC_CLIENT_COMMANDER_MODE`:
+
+| Commander | Target | Protocol | Platform |
+|-----------|--------|----------|----------|
+| `esp32` | ESP32 → BLE HID | HTTP POST | Any (existing) |
+| `sysbotbase` | sys-botbase on Switch | TCP port 6000 (text) | Modded Switch |
+| `luma3ds` | Luma3DS input redirect | UDP port 4950 (binary) | Modded 3DS |
+| `virtual-gamepad` | OS-level gamepad (uinput/ViGEm) | OS API | Emulators |
+
+- `CommandForwarder` (formerly `ESP32Forwarder`) translates `HIDCommandMessage` or `GameCommandMessage` → `Commander.send_command(action, params)` → `CommandAck`
+- `GameCommandMessage` supports command types: `mouse`, `keyboard`, `gamepad`, `touch`
+- Each commander handles its own connection lifecycle and protocol translation
 
 ## Project Structure
 
@@ -113,16 +137,17 @@ ChromaCatch-Go/
 │   │   │   ├── transport/
 │   │   │   │   ├── base.py                  # MediaTransport ABC
 │   │   │   │   ├── srt_transport.py         # SRT publisher (GStreamer→srtsink) + stats
+│   │   │   │   ├── webrtc_transport.py      # WebRTC publisher (GStreamer→whipclientsink)
 │   │   │   │   ├── ws_transport.py          # WebSocket transport (JPEG frames + PCM)
 │   │   │   │   ├── h264_ws_transport.py     # H.264 passthrough WS transport (raw AUs + PCM)
-│   │   │   │   ├── failover_transport.py    # SRT→WS auto-failover with recovery
-│   │   │   │   └── factory.py               # Transport factory (srt | srt-failover | h264-ws | websocket)
+│   │   │   │   ├── failover_transport.py    # Primary→WS auto-failover with recovery
+│   │   │   │   └── factory.py               # Transport factory (webrtc | srt | *-failover | h264-ws | ws)
 │   │   │   ├── audio/
 │   │   │   │   ├── factory.py               # Runtime audio source selection
 │   │   │   │   ├── airplay_audio_source.py  # AirPlay RTP audio source adapter
 │   │   │   │   └── ffmpeg_audio_source.py   # System/capture-device audio adapter
 │   │   │   ├── ws_client.py                 # WebSocket client (auto-reconnect + command ack)
-│   │   │   ├── esp32_forwarder.py           # WS command → ESP32 HTTP bridge (+ ack timing)
+│   │   │   ├── esp32_forwarder.py           # CommandForwarder: WS command → Commander (+ ack timing)
 │   │   │   ├── capture/
 │   │   │   │   ├── airplay_manager.py       # UxPlay process management
 │   │   │   │   ├── frame_capture.py         # OpenCV GStreamer/FFmpeg frame capture
@@ -134,11 +159,21 @@ ChromaCatch-Go/
 │   │   │   │   ├── screen_source.py         # Desktop/window capture source adapter
 │   │   │   │   └── factory.py               # Runtime source selection
 │   │   │   └── commander/
-│   │   │       └── esp32_client.py          # HTTP client for ESP32 commands
+│   │   │       ├── base.py                  # Commander ABC + CommandResult
+│   │   │       ├── factory.py               # Commander factory (esp32 | sysbotbase | luma3ds | virtual-gamepad)
+│   │   │       ├── esp32_client.py          # HTTP client for ESP32 commands
+│   │   │       ├── esp32_commander.py       # ESP32Commander (wraps esp32_client)
+│   │   │       ├── sysbotbase_client.py     # sys-botbase TCP (Switch, port 6000)
+│   │   │       ├── luma3ds_client.py        # Luma3DS input redirect (3DS, UDP 4950)
+│   │   │       └── virtual_gamepad.py       # Virtual gamepad (Linux uinput / Windows ViGEm)
 │   │   └── tests/                           # Client tests
 │   │       ├── test_airplay_manager.py
 │   │       ├── test_esp32_client.py
-│   │       ├── test_esp32_forwarder.py
+│   │       ├── test_esp32_forwarder.py      # ESP32Forwarder backward compat tests
+│   │       ├── test_commander.py            # Commander ABC + ESP32Commander + factory
+│   │       ├── test_command_forwarder.py    # CommandForwarder with GameCommandMessage
+│   │       ├── test_stub_commanders.py      # sys-botbase, Luma3DS, virtual gamepad
+│   │       ├── test_webrtc_transport.py     # WebRTC transport + factory tests
 │   │       ├── test_frame_capture.py
 │   │       ├── test_h264_capture.py         # H264AUParser + keyframe detection tests
 │   │       ├── test_h264_transport.py       # H264WebSocketTransport + factory tests
@@ -198,7 +233,8 @@ ChromaCatch-Go/
 | Layer | Technology |
 |-------|-----------|
 | Backend | Python 3.11+, FastAPI, uvicorn, pydantic |
-| Media transport (primary) | SRT via GStreamer srtsink → MediaMTX → RTSP |
+| Media transport (primary) | WebRTC via GStreamer whipclientsink → MediaMTX WHIP |
+| Media transport (alt) | SRT via GStreamer srtsink → MediaMTX → RTSP |
 | Media transport (Cloud Run) | H.264 passthrough over WebSocket (h264-ws) |
 | Media transport (fallback) | WebSocket (websockets library, JPEG + PCM) |
 | Media router | MediaMTX (SRT ingest, RTSP local, WebRTC/WHEP dashboard) |
@@ -213,7 +249,7 @@ ChromaCatch-Go/
 | H.264 decode | PyAV (av) — FFmpeg wrapper for backend H.264→BGR decode |
 | iOS app | Swift, SwiftUI, CoreBluetooth, ExternalAccessory, URLSessionWebSocketTask |
 | GPS spoofing | iTools BT dongle (Beken BK-BLE-1.0, MFi coprocessor, EA protocol) |
-| Testing | pytest, pytest-asyncio (265 tests) |
+| Testing | pytest, pytest-asyncio (357 tests) |
 | Linting | ruff, black, mypy |
 
 ## Phases
@@ -271,6 +307,24 @@ ChromaCatch-Go/
 - [ ] End-to-end: location service POST /location → iOS app WS → BLE NMEA → iPhone location change
 - [ ] End-to-end: ReplayKit broadcast → H.264 frames on backend dashboard (same stream as CLI)
 
+### Phase 2A: Universal Source / Transport / Input [IN PROGRESS]
+- [x] Commander ABC + CommandResult model (`commander/base.py`)
+- [x] ESP32Commander adapter wrapping existing ESP32Client
+- [x] Commander factory (`commander/factory.py`) — mode-based creation
+- [x] GameCommandMessage type in shared protocol (supports mouse/keyboard/gamepad/touch)
+- [x] CommandForwarder generalized from ESP32Forwarder — routes via Commander interface
+- [x] WebRTC transport (`webrtc_transport.py`) — GStreamer whipclientsink to MediaMTX WHIP
+- [x] Transport factory updated for webrtc + webrtc-failover modes
+- [x] SysBotbaseCommander — sys-botbase TCP for modded Switch (text commands)
+- [x] Luma3DSCommander — Luma3DS input redirect for modded 3DS (UDP binary packets)
+- [x] VirtualGamepadCommander — uinput (Linux) / ViGEm (Windows) for emulators
+- [x] 357 tests passing (92 new commander + WebRTC + forwarder tests)
+- [ ] SysDVR frame source (H.264 from modded Switch via TCP/RTSP)
+- [ ] NTR frame source (TurboJPEG over UDP from modded 3DS)
+- [ ] ESP32 gamepad firmware mode (ESP32-BLE-Gamepad)
+- [ ] iOS WebRTC transport (WebRTC.framework)
+- [ ] DSU/Cemuhook commander for emulator motion input
+
 ### Phase 2: Computer Vision
 - [ ] Screen state detection (battle, overworld, menu, etc.)
 - [ ] Pokemon encounter detection
@@ -289,7 +343,7 @@ ChromaCatch-Go/
 # Install
 poetry install
 
-# Run all tests (265 tests)
+# Run all tests (357 tests)
 poetry run pytest
 
 # Run by suite
@@ -355,13 +409,22 @@ CC_CLIENT_AUDIO_CHANNELS=2
 CC_CLIENT_AUDIO_CHUNK_MS=100
 CC_CLIENT_AUDIO_INPUT_BACKEND=auto          # auto | avfoundation | pulse | dshow
 CC_CLIENT_AUDIO_INPUT_DEVICE=               # backend-specific input selector
+# Commander (input target)
+CC_CLIENT_COMMANDER_MODE=esp32              # esp32 | sysbotbase | luma3ds | virtual-gamepad
+CC_CLIENT_COMMANDER_HOST=192.168.1.100      # Target host (ESP32, Switch, 3DS)
+CC_CLIENT_COMMANDER_PORT=0                  # Target port (0 = use default per commander)
 # Transport settings
-CC_CLIENT_TRANSPORT_MODE=websocket          # websocket | h264-ws | srt | srt-failover
+CC_CLIENT_TRANSPORT_MODE=websocket          # webrtc | srt | webrtc-failover | srt-failover | h264-ws | websocket
 CC_CLIENT_SRT_BACKEND_URL=                  # srt://host:8890 (auto-derived from WS URL if empty)
 CC_CLIENT_SRT_LATENCY_MS=50                 # SRT latency buffer
 CC_CLIENT_SRT_PASSPHRASE=                   # optional SRT encryption
 CC_CLIENT_SRT_STREAM_ID=                    # auto-derived from client_id if empty
-CC_CLIENT_SRT_OPUS_BITRATE=128000           # Opus audio bitrate (SRT mode)
+CC_CLIENT_SRT_OPUS_BITRATE=128000           # Opus audio bitrate (SRT/WebRTC mode)
+CC_CLIENT_WEBRTC_WHIP_URL=                  # Auto-derived from backend URL if empty
+CC_CLIENT_WEBRTC_STUN_SERVER=stun://stun.l.google.com:19302
+CC_CLIENT_WEBRTC_TURN_SERVER=               # Optional TURN for symmetric NATs
+CC_CLIENT_WEBRTC_TURN_USERNAME=
+CC_CLIENT_WEBRTC_TURN_PASSWORD=
 ```
 
 **Location Service** (`.env` with `CC_LOCATION_` prefix):

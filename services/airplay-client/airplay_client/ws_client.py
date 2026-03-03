@@ -26,6 +26,7 @@ from shared.messages import (
     CommandAck,
     ConfigUpdate,
     FrameMetadata,
+    GameCommandMessage,
     H264FrameMetadata,
     HIDCommandMessage,
     HeartbeatPong,
@@ -40,7 +41,7 @@ class WebSocketClient:
 
     def __init__(
         self,
-        on_hid_command: Callable[[HIDCommandMessage], Awaitable[CommandAck | None]],
+        on_hid_command: Callable[[HIDCommandMessage | GameCommandMessage], Awaitable[CommandAck | None]],
         on_config_update: Callable[[ConfigUpdate], Awaitable[None]] | None = None,
         backend_ws_url: str | None = None,
         name: str = "ws",
@@ -137,7 +138,7 @@ class WebSocketClient:
                 logger.error("Failed to parse message: %s", raw_message[:200])
                 continue
 
-            if isinstance(msg, HIDCommandMessage):
+            if isinstance(msg, (HIDCommandMessage, GameCommandMessage)):
                 ack = await self._on_hid_command(msg)
                 if ack is not None:
                     await self.send_message(ack)

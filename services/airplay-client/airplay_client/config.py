@@ -22,7 +22,12 @@ class ClientSettings(BaseSettings):
     client_id: str = socket.gethostname()
     api_key: str = ""
 
-    # ESP32 connection
+    # Commander (input target)
+    commander_mode: str = "esp32"  # esp32 | sysbotbase | luma3ds | virtual-gamepad
+    commander_host: str = ""  # Target host (defaults to esp32_host for esp32 mode)
+    commander_port: int = 0  # Target port (defaults to esp32_port for esp32 mode)
+
+    # ESP32 connection (used when commander_mode="esp32")
     esp32_host: str = "192.168.1.100"
     esp32_port: int = 80
     esp32_timeout: float = 2.0
@@ -61,9 +66,17 @@ class ClientSettings(BaseSettings):
     audio_input_backend: str = "auto"  # auto | avfoundation | pulse | dshow
     audio_input_device: str = ""  # backend-specific input selector
 
-    # Transport mode: "srt" | "srt-failover" | "h264-ws" | "websocket"
+    # Transport mode: "webrtc" | "srt" | "srt-failover" | "h264-ws" | "websocket" | "webrtc-failover"
+    # webrtc: H.264 passthrough via GStreamer WHIP to MediaMTX (lowest latency, UDP)
     # h264-ws: H.264 passthrough over WebSocket (Cloud Run compatible, near-SRT efficiency)
-    transport_mode: str = "websocket"  # default to websocket until SRT backend is configured
+    transport_mode: str = "websocket"  # default to websocket until backend is configured
+
+    # WebRTC transport settings (used when transport_mode="webrtc")
+    webrtc_whip_url: str = ""  # e.g. http://host:8889/chromacatch/whip (auto-derived if empty)
+    webrtc_stun_server: str = "stun://stun.l.google.com:19302"
+    webrtc_turn_server: str = ""  # optional TURN relay for symmetric NATs
+    webrtc_turn_username: str = ""
+    webrtc_turn_password: str = ""
 
     # SRT transport settings (used when transport_mode="srt")
     srt_backend_url: str = ""  # e.g. srt://host:8890

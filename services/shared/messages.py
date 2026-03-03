@@ -106,6 +106,22 @@ class HIDCommandMessage(BaseMessage):
     dispatched_at_backend: float | None = None
 
 
+class GameCommandMessage(BaseMessage):
+    """Universal game input command for any target (ESP32, sys-botbase, etc.).
+
+    Extends beyond HID-specific commands to support gamepad buttons, analog
+    sticks, touch input, and target-specific actions.
+    """
+
+    type: str = MessageType.GAME_COMMAND
+    command_type: str  # "mouse", "keyboard", "gamepad", "touch"
+    action: str  # "move", "click", "button_press", "button_release", "stick", "tap"
+    params: dict[str, int | float | str] = {}
+    command_id: str | None = None
+    command_sequence: int | None = None
+    dispatched_at_backend: float | None = None
+
+
 class CommandAck(BaseMessage):
     """Ack and timing from client after forwarding a command."""
 
@@ -176,6 +192,7 @@ _TYPE_MAP: dict[str, type[BaseMessage]] = {
     MessageType.AUDIO_CHUNK: AudioChunk,
     MessageType.CLIENT_STATUS: ClientStatus,
     MessageType.HID_COMMAND: HIDCommandMessage,
+    MessageType.GAME_COMMAND: GameCommandMessage,
     MessageType.COMMAND_ACK: CommandAck,
     MessageType.CONFIG_UPDATE: ConfigUpdate,
     MessageType.LOCATION_UPDATE: LocationUpdateMessage,

@@ -43,6 +43,7 @@ class MessageType:
 
     # Backend -> Client
     HID_COMMAND = "hid_command"
+    GAME_COMMAND = "game_command"
     COMMAND_ACK = "command_ack"
     CONFIG_UPDATE = "config_update"
     LOCATION_UPDATE = "location_update"

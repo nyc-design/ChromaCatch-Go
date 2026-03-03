@@ -57,6 +57,20 @@ def create_media_transport(
             h264_capture=h264_capture,
             audio_source=audio_source,
         )
+    elif mode == "webrtc":
+        from airplay_client.transport.webrtc_transport import WebRTCTransport
+        logger.info("Using WebRTC media transport (H.264 passthrough via WHIP)")
+        return WebRTCTransport(audio_enabled=audio_source is not None)
+    elif mode == "webrtc-failover":
+        from airplay_client.transport.failover_transport import FailoverTransport
+        from airplay_client.transport.webrtc_transport import WebRTCTransport
+        from airplay_client.transport.ws_transport import WebSocketTransport
+        if frame_ws is None:
+            raise ValueError("WebRTC failover requires a frame_ws client for fallback")
+        webrtc = WebRTCTransport(audio_enabled=audio_source is not None)
+        ws = WebSocketTransport(frame_ws=frame_ws, frame_source=frame_source, audio_source=audio_source)
+        logger.info("Using WebRTC media transport with WebSocket failover")
+        return FailoverTransport(srt_transport=webrtc, ws_transport=ws)
     elif mode == "websocket":
         from airplay_client.transport.ws_transport import WebSocketTransport
         if frame_ws is None:
@@ -68,4 +82,7 @@ def create_media_transport(
             audio_source=audio_source,
         )
     else:
-        raise ValueError(f"Unknown transport mode: {mode!r}. Use 'srt', 'srt-failover', 'h264-ws', or 'websocket'.")
+        raise ValueError(
+            f"Unknown transport mode: {mode!r}. "
+            "Use 'srt', 'srt-failover', 'webrtc', 'webrtc-failover', 'h264-ws', or 'websocket'."
+        )

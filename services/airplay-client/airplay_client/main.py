@@ -16,9 +16,10 @@ from airplay_client.audio.base import AudioSource
 from airplay_client.audio.factory import create_audio_source
 from airplay_client.capture.h264_capture import H264Capture
 from airplay_client.capture.process_cleanup import cleanup_stale_airplay_processes
-from airplay_client.commander.esp32_client import ESP32Client
+from airplay_client.commander.base import Commander
+from airplay_client.commander.factory import create_commander
 from airplay_client.config import client_settings
-from airplay_client.esp32_forwarder import ESP32Forwarder
+from airplay_client.esp32_forwarder import CommandForwarder
 from airplay_client.runtime_lock import SingleInstanceLock
 from airplay_client.sources.airplay_source import AirPlayFrameSource
 from airplay_client.sources.base import FrameSource
@@ -37,8 +38,8 @@ class ChromaCatchClient:
 
     def __init__(self) -> None:
         self._frame_source: FrameSource = create_frame_source()
-        self._esp32 = ESP32Client()
-        self._forwarder = ESP32Forwarder(self._esp32)
+        self._commander: Commander = create_commander()
+        self._forwarder = CommandForwarder(self._commander)
         self._audio_source: AudioSource | None = create_audio_source()
 
         # Control channel: always WebSocket (commands, status, ACKs)
@@ -51,7 +52,7 @@ class ChromaCatchClient:
         # Media transport: SRT, H.264-WS, or legacy WebSocket
         # Frame WS is needed for "websocket", "srt-failover", and "h264-ws" modes
         self._frame_ws: WebSocketClient | None = None
-        if client_settings.transport_mode in ("websocket", "srt-failover", "h264-ws"):
+        if client_settings.transport_mode in ("websocket", "srt-failover", "webrtc-failover", "h264-ws"):
             self._frame_ws = WebSocketClient(
                 on_hid_command=self._forwarder.handle_command,
                 on_config_update=self._handle_config_update,
@@ -102,17 +103,21 @@ class ChromaCatchClient:
     async def _status_reporter_loop(self) -> None:
         """Send periodic status updates to backend."""
         while True:
-            try:
-                esp32_reachable = await self._esp32.ping()
-            except Exception:
-                esp32_reachable = False
+            # Check ESP32 status if using ESP32 commander
+            esp32_reachable = False
             esp32_ble = None
-            if esp32_reachable:
+            if self._commander.commander_name == "esp32":
                 try:
-                    s = await self._esp32.status()
-                    esp32_ble = s.get("ble_connected")
+                    from airplay_client.commander.esp32_commander import ESP32Commander
+                    if isinstance(self._commander, ESP32Commander):
+                        esp32_reachable = await self._commander._esp32.ping()
+                        if esp32_reachable:
+                            s = await self._commander._esp32.status()
+                            esp32_ble = s.get("ble_connected")
                 except Exception:
                     pass
+            else:
+                esp32_reachable = self._commander.is_connected
 
             airplay_running, airplay_pid = self._airplay_state()
 
@@ -182,7 +187,7 @@ class ChromaCatchClient:
         # In SRT and H.264-WS modes, GStreamer reads directly from RTP — no
         # Python frame decode is needed.  But UxPlay must still run so the
         # iPhone can discover and connect via AirPlay.
-        if client_settings.transport_mode in ("srt", "h264-ws"):
+        if client_settings.transport_mode in ("srt", "webrtc", "h264-ws"):
             if isinstance(self._frame_source, AirPlayFrameSource):
                 logger.info(
                     "%s mode: starting AirPlay receiver (UxPlay) only",
@@ -220,12 +225,12 @@ class ChromaCatchClient:
             self._audio_source.stop()
         if self._h264_capture is not None:
             self._h264_capture.stop()
-        if client_settings.transport_mode in ("srt", "h264-ws"):
+        if client_settings.transport_mode in ("srt", "webrtc", "h264-ws"):
             if isinstance(self._frame_source, AirPlayFrameSource):
                 self._frame_source._airplay.stop()
         else:
             self._frame_source.stop()
-        await self._esp32.close()
+        await self._commander.disconnect()
 
 
 def main():
