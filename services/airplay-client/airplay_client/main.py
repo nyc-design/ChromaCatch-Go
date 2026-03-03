@@ -28,7 +28,7 @@ from airplay_client.transport.base import MediaTransport
 from airplay_client.transport.factory import create_media_transport
 from airplay_client.ws_client import WebSocketClient
 from shared.constants import setup_logging
-from shared.messages import ClientStatus, ConfigUpdate
+from shared.messages import ClientStatus, ConfigUpdate, SetHIDModeMessage
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,7 @@ class ChromaCatchClient:
         # Control channel: always WebSocket (commands, status, ACKs)
         self._control_ws = WebSocketClient(
             on_hid_command=self._forwarder.handle_command,
+            on_set_hid_mode=self._handle_set_hid_mode,
             backend_ws_url=self._resolve_control_ws_url(),
             name="control",
         )
@@ -99,6 +100,24 @@ class ChromaCatchClient:
             client_settings.max_dimension,
             client_settings.frame_interval_ms,
         )
+
+    async def _handle_set_hid_mode(self, msg: SetHIDModeMessage) -> None:
+        """Apply HID mode change from backend — routes to ESP32 mode API."""
+        mode_map = {"combo": "mouse_keyboard", "mouse": "mouse_keyboard", "keyboard": "mouse_keyboard", "gamepad": "gamepad"}
+        esp32_mode = mode_map.get(msg.hid_mode)
+        if esp32_mode is None:
+            logger.warning("Unknown HID mode: %s", msg.hid_mode)
+            return
+
+        from airplay_client.commander.esp32_commander import ESP32Commander
+        if isinstance(self._commander, ESP32Commander):
+            try:
+                result = await self._commander._esp32.set_mode(output_mode=esp32_mode)
+                logger.info("ESP32 HID mode changed to %s: %s", esp32_mode, result)
+            except Exception as e:
+                logger.error("Failed to set ESP32 mode: %s", e)
+        else:
+            logger.info("HID mode change (%s) ignored — commander is %s, not ESP32", msg.hid_mode, self._commander.commander_name)
 
     async def _status_reporter_loop(self) -> None:
         """Send periodic status updates to backend."""

@@ -47,6 +47,48 @@ class TestCommandEndpoint:
         assert response.status_code == 404
 
 
+class TestHIDModeEndpoint:
+    def test_hid_mode_no_clients_broadcast(self):
+        """Broadcasting to zero clients should succeed (no-op)."""
+        client = TestClient(app)
+        response = client.post("/hid-mode", json={"hid_mode": "gamepad"})
+        assert response.status_code == 200
+        assert response.json()["status"] == "sent"
+        assert response.json()["hid_mode"] == "gamepad"
+
+    def test_hid_mode_unknown_client(self):
+        client = TestClient(app)
+        response = client.post("/hid-mode", json={"hid_mode": "combo", "client_id": "nonexistent"})
+        assert response.status_code == 404
+
+    def test_hid_mode_invalid_mode(self):
+        client = TestClient(app)
+        response = client.post("/hid-mode", json={"hid_mode": "invalid_mode"})
+        assert response.status_code == 400
+        assert "Invalid hid_mode" in response.json()["detail"]
+
+    def test_hid_mode_sends_to_client(self):
+        """When a client is connected, the mode change should be sent over WS."""
+        import asyncio
+        ws = AsyncMock()
+        loop = asyncio.get_event_loop()
+        session = loop.run_until_complete(
+            session_manager.register("test-hid-mode", ws, channel="control")
+        )
+        try:
+            client = TestClient(app)
+            response = client.post("/hid-mode", json={"hid_mode": "gamepad", "client_id": "test-hid-mode"})
+            assert response.status_code == 200
+            assert response.json()["hid_mode"] == "gamepad"
+            # Verify WS send was called
+            ws.send_text.assert_called_once()
+            sent = ws.send_text.call_args[0][0]
+            assert '"set_hid_mode"' in sent
+            assert '"gamepad"' in sent
+        finally:
+            loop.run_until_complete(session_manager.unregister("test-hid-mode", channel="control"))
+
+
 class TestClientStatusEndpoint:
     def test_client_not_found(self):
         client = TestClient(app)

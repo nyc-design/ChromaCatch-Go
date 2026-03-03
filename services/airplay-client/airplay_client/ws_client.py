@@ -30,6 +30,7 @@ from shared.messages import (
     H264FrameMetadata,
     HIDCommandMessage,
     HeartbeatPong,
+    SetHIDModeMessage,
     parse_message,
 )
 
@@ -43,11 +44,13 @@ class WebSocketClient:
         self,
         on_hid_command: Callable[[HIDCommandMessage | GameCommandMessage], Awaitable[CommandAck | None]],
         on_config_update: Callable[[ConfigUpdate], Awaitable[None]] | None = None,
+        on_set_hid_mode: Callable[[SetHIDModeMessage], Awaitable[None]] | None = None,
         backend_ws_url: str | None = None,
         name: str = "ws",
     ):
         self._on_hid_command = on_hid_command
         self._on_config_update = on_config_update
+        self._on_set_hid_mode = on_set_hid_mode
         self._backend_ws_url = backend_ws_url or client_settings.backend_ws_url
         self._name = name
         self._ws: WebSocketClientProtocol | None = None
@@ -146,6 +149,9 @@ class WebSocketClient:
             elif isinstance(msg, ConfigUpdate):
                 if self._on_config_update:
                     await self._on_config_update(msg)
+            elif isinstance(msg, SetHIDModeMessage):
+                if self._on_set_hid_mode:
+                    await self._on_set_hid_mode(msg)
             elif isinstance(msg, HeartbeatPong):
                 pass
             else:

@@ -46,6 +46,7 @@ class MessageType:
     GAME_COMMAND = "game_command"
     COMMAND_ACK = "command_ack"
     CONFIG_UPDATE = "config_update"
+    SET_HID_MODE = "set_hid_mode"
     LOCATION_UPDATE = "location_update"
     LOCATION_STATUS = "location_status"
 

@@ -376,6 +376,9 @@ class AppCoordinator: ObservableObject {
         case .gameCommand(let cmd):
             handleGameCommand(cmd)
 
+        case .setHidMode(let cmd):
+            handleSetHIDMode(cmd)
+
         case .locationUpdate:
             // Location updates should come from location service, not control channel
             addLog("Warning: location update on control channel (ignoring)")
@@ -440,6 +443,37 @@ class AppCoordinator: ObservableObject {
         } else {
             bleHIDCommander.stop()
             addLog("BLE HID: disabled")
+        }
+    }
+
+    // MARK: - HID Mode Change (Backend-driven)
+
+    private func handleSetHIDMode(_ cmd: SetHIDModeMessage) {
+        guard let profile = HIDProfile(rawValue: cmd.hidMode) else {
+            addLog("Unknown HID mode: \(cmd.hidMode)")
+            return
+        }
+
+        if useBLEHID {
+            // Switch the iOS BLE HID commander profile
+            addLog("HID mode change → BLE HID: \(profile.rawValue)")
+            bleHIDCommander.switchProfile(profile)
+        } else {
+            // Map HIDProfile to ESP32 output_mode and send via HTTP
+            let esp32OutputMode: String
+            switch profile {
+            case .gamepad: esp32OutputMode = "gamepad"
+            case .combo, .mouse, .keyboard: esp32OutputMode = "mouse_keyboard"
+            }
+            addLog("HID mode change → ESP32: \(esp32OutputMode)")
+            Task {
+                let ok = await esp32Client.setMode(outputMode: esp32OutputMode)
+                if ok {
+                    await queryESP32Mode()
+                } else {
+                    addLog("ESP32 mode change failed")
+                }
+            }
         }
     }
 

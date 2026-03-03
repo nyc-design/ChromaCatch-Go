@@ -242,6 +242,24 @@ class BLEHIDCommander: NSObject, ObservableObject {
         }
     }
 
+    /// Switch to a different HID profile at runtime.
+    /// Stops the current session, changes profile, and restarts.
+    /// Connected centrals will need to reconnect after the switch.
+    func switchProfile(_ profile: HIDProfile) {
+        let wasRunning = peripheralManager != nil
+        hidLog.info("Switching HID profile: \(currentProfile.rawValue) → \(profile.rawValue)")
+        if wasRunning { stop() }
+        // Brief delay to let BLE stack clean up before re-advertising
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self = self else { return }
+            if wasRunning {
+                self.start(profile: profile)
+            } else {
+                self.currentProfile = profile
+            }
+        }
+    }
+
     // MARK: - Mouse Commands (Report ID 1)
 
     /// Send mouse move (relative). Report: [0x01, buttons, dx, dy, wheel]

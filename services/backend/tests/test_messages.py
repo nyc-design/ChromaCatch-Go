@@ -16,6 +16,7 @@ from shared.messages import (
     HeartbeatPong,
     HIDCommandMessage,
     LocationUpdateMessage,
+    SetHIDModeMessage,
     parse_message,
 )
 
@@ -314,6 +315,29 @@ class TestLocationUpdateMessage:
         parsed = parse_message(msg.model_dump_json())
         assert isinstance(parsed, LocationUpdateMessage)
         assert parsed.latitude == 37.335
+
+
+class TestSetHIDModeMessage:
+    def test_creation(self):
+        msg = SetHIDModeMessage(hid_mode="gamepad")
+        assert msg.type == MessageType.SET_HID_MODE
+        assert msg.hid_mode == "gamepad"
+
+    def test_combo_mode(self):
+        msg = SetHIDModeMessage(hid_mode="combo")
+        assert msg.hid_mode == "combo"
+
+    def test_roundtrip_json(self):
+        msg = SetHIDModeMessage(hid_mode="keyboard")
+        parsed = SetHIDModeMessage.model_validate_json(msg.model_dump_json())
+        assert parsed.hid_mode == "keyboard"
+        assert parsed.type == "set_hid_mode"
+
+    def test_parse_message_dispatch(self):
+        msg = SetHIDModeMessage(hid_mode="gamepad")
+        parsed = parse_message(msg.model_dump_json())
+        assert isinstance(parsed, SetHIDModeMessage)
+        assert parsed.hid_mode == "gamepad"
 
 
 class TestCommandAck:

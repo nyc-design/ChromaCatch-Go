@@ -144,6 +144,17 @@ class ConfigUpdate(BaseMessage):
     frame_interval_ms: int | None = None
 
 
+class SetHIDModeMessage(BaseMessage):
+    """Backend tells client to switch HID profile (gamepad vs combo mouse+keyboard).
+
+    The client routes this to either the iOS BLE HID commander or the ESP32,
+    depending on which input target is active.
+    """
+
+    type: str = MessageType.SET_HID_MODE
+    hid_mode: str  # "combo", "gamepad", "mouse", "keyboard"
+
+
 class LocationUpdateMessage(BaseMessage):
     """GPS coordinates to send to the iTools dongle via iOS app."""
 
@@ -195,6 +206,7 @@ _TYPE_MAP: dict[str, type[BaseMessage]] = {
     MessageType.GAME_COMMAND: GameCommandMessage,
     MessageType.COMMAND_ACK: CommandAck,
     MessageType.CONFIG_UPDATE: ConfigUpdate,
+    MessageType.SET_HID_MODE: SetHIDModeMessage,
     MessageType.LOCATION_UPDATE: LocationUpdateMessage,
     MessageType.LOCATION_STATUS: LocationStatusMessage,
     MessageType.PING: HeartbeatPing,

@@ -78,6 +78,7 @@ The client supports multiple transport modes for video/audio delivery, configura
 ### WebSocket Protocol
 - **Frames (client → backend)**: Two-message pattern — JSON `FrameMetadata` followed by binary JPEG bytes (WS mode) or JSON `H264FrameMetadata` followed by binary H.264 AU bytes (h264-ws mode)
 - **Commands (backend → client)**: JSON `HIDCommandMessage` (legacy) or `GameCommandMessage` (universal) with action + params
+- **HID Mode (backend → client)**: JSON `SetHIDModeMessage` with `hid_mode` (combo/gamepad/mouse/keyboard) — switches BLE HID profile or ESP32 output mode
 - **Command ACKs (client → backend)**: JSON `CommandAck` after command forward attempt
 - **Audio (client → backend)**: JSON `AudioChunk` metadata + binary PCM payload
 - **Status (client → backend)**: Periodic JSON `ClientStatus` updates
@@ -266,7 +267,7 @@ ChromaCatch-Go/
 | H.264 decode | PyAV (av) — FFmpeg wrapper for backend H.264→BGR decode |
 | iOS app | Swift, SwiftUI, CoreBluetooth, ExternalAccessory, URLSessionWebSocketTask |
 | GPS spoofing | iTools BT dongle (Beken BK-BLE-1.0, MFi coprocessor, EA protocol) |
-| Testing | pytest, pytest-asyncio (491 tests) |
+| Testing | pytest, pytest-asyncio (499 tests) |
 | Linting | ruff, black, mypy |
 
 ## Phases
@@ -489,6 +490,7 @@ CC_BACKEND_RTP_FEC_CLIENT_ID=rtp-fec       # client_id for session manager
 | GET | `/health` | Health check |
 | GET | `/status` | Connected clients count |
 | POST | `/command` | Send HID command to client(s) |
+| POST | `/hid-mode` | Switch client HID profile (gamepad/combo/mouse/keyboard) |
 | GET | `/clients/{id}/status` | Get client's latest status |
 | GET | `/clients/{id}/frame` | Get latest frame as JPEG |
 | GET | `/clients/{id}/audio` | Get latest audio chunk as WAV snippet |

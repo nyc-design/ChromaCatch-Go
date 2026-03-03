@@ -18,7 +18,7 @@ from backend.session_manager import SessionManager
 from backend.ws_handler import WebSocketHandler
 from shared.frame_codec import encode_frame
 from shared.constants import setup_logging
-from shared.messages import HIDCommandMessage
+from shared.messages import HIDCommandMessage, SetHIDModeMessage
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -146,6 +146,46 @@ async def send_command(req: SendCommandRequest):
                 "action": req.action,
                 "sent_to": len(sent),
             }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+class SetHIDModeRequest(BaseModel):
+    client_id: str | None = None
+    hid_mode: str  # "combo", "gamepad", "mouse", "keyboard"
+
+
+@app.post("/hid-mode")
+async def set_hid_mode(req: SetHIDModeRequest):
+    """Tell client(s) to switch HID profile (gamepad vs combo mouse+keyboard)."""
+    valid_modes = {"combo", "gamepad", "mouse", "keyboard"}
+    if req.hid_mode not in valid_modes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid hid_mode: {req.hid_mode}. Must be one of: {', '.join(sorted(valid_modes))}",
+        )
+    msg = SetHIDModeMessage(hid_mode=req.hid_mode)
+    try:
+        if req.client_id:
+            session = session_manager.get_session(req.client_id)
+            if session is None:
+                raise ValueError(f"No client connected with id: {req.client_id}")
+            ws = session.control_websocket or session.frame_websocket
+            if ws is None:
+                raise ValueError(f"No active transport for client: {req.client_id}")
+            await ws.send_text(msg.model_dump_json())
+            return {"status": "sent", "hid_mode": req.hid_mode, "client_id": req.client_id}
+        else:
+            sent_count = 0
+            for cid in session_manager.connected_clients:
+                sess = session_manager.get_session(cid)
+                if sess is None:
+                    continue
+                ws = sess.control_websocket or sess.frame_websocket
+                if ws is not None:
+                    await ws.send_text(msg.model_dump_json())
+                    sent_count += 1
+            return {"status": "sent", "hid_mode": req.hid_mode, "sent_to": sent_count}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

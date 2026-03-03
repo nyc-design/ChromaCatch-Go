@@ -11,6 +11,7 @@ enum MessageType {
     static let gameCommand = "game_command"
     static let commandAck = "command_ack"
     static let configUpdate = "config_update"
+    static let setHidMode = "set_hid_mode"
     static let locationUpdate = "location_update"
     static let locationStatus = "location_status"
     static let error = "error"
@@ -112,6 +113,19 @@ enum AnyCodableValue: Codable, Equatable {
         case .double(let v): return String(v)
         case .string(let v): return v
         }
+    }
+}
+
+/// Backend tells client to switch HID profile (gamepad vs combo mouse+keyboard).
+/// Mirrors Python SetHIDModeMessage.
+struct SetHIDModeMessage: Codable {
+    let type: String
+    let hidMode: String  // "combo", "gamepad", "mouse", "keyboard"
+    let timestamp: Double
+
+    enum CodingKeys: String, CodingKey {
+        case type, timestamp
+        case hidMode = "hid_mode"
     }
 }
 
@@ -391,6 +405,7 @@ enum IncomingMessage {
     case locationUpdate(LocationUpdateMessage)
     case hidCommand(HIDCommandMessage)
     case gameCommand(GameCommandMessage)
+    case setHidMode(SetHIDModeMessage)
     case ping(HeartbeatPing)
     case unknown(String)
 
@@ -414,6 +429,9 @@ enum IncomingMessage {
         case MessageType.gameCommand:
             guard let msg = try? decoder.decode(GameCommandMessage.self, from: data) else { return nil }
             return .gameCommand(msg)
+        case MessageType.setHidMode:
+            guard let msg = try? decoder.decode(SetHIDModeMessage.self, from: data) else { return nil }
+            return .setHidMode(msg)
         case MessageType.ping:
             guard let msg = try? decoder.decode(HeartbeatPing.self, from: data) else { return nil }
             return .ping(msg)
