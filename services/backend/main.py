@@ -18,7 +18,7 @@ from backend.session_manager import SessionManager
 from backend.ws_handler import WebSocketHandler
 from shared.frame_codec import encode_frame
 from shared.constants import setup_logging
-from shared.messages import HIDCommandMessage, SetHIDModeMessage
+from shared.messages import GameCommandMessage, HIDCommandMessage, SetHIDModeMessage
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -122,13 +122,22 @@ async def get_status():
 class SendCommandRequest(BaseModel):
     client_id: str | None = None
     action: str
-    params: dict[str, int | float] = {}
+    params: dict[str, int | float | str] = {}
+    command_type: str | None = None  # If set, use GameCommandMessage
 
 
 @app.post("/command")
 async def send_command(req: SendCommandRequest):
-    """Send a HID command to a connected client (for manual/debug use)."""
-    cmd = HIDCommandMessage(action=req.action, params=req.params)
+    """Send a HID or game command to a connected client (for manual/debug use)."""
+    has_str_params = any(isinstance(v, str) for v in req.params.values())
+    if req.command_type or has_str_params:
+        cmd = GameCommandMessage(
+            command_type=req.command_type or "keyboard",
+            action=req.action,
+            params=req.params,
+        )
+    else:
+        cmd = HIDCommandMessage(action=req.action, params=req.params)
     try:
         if req.client_id:
             sent_cmd = await session_manager.send_command(req.client_id, cmd)
