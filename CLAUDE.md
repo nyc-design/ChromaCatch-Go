@@ -237,9 +237,9 @@ ChromaCatch-Go/
 │   │           ├── PacketTunnelProvider.swift      # DNS sinkhole for Apple location domains
 │   ├── ios-location-spoofer/                     # iOS: dedicated location spoof app package
 │   │   ├── README.md
-│   │   └── ChromaCatchLocationSpoof/
-│   │       ├── ChromaCatchLocationSpoof.xcodeproj
-│   │       ├── ChromaCatchController/            # spoof-focused SwiftUI app target
+│   │   └── ChromaCatchLocationControl/
+│   │       ├── ChromaCatchLocationControl.xcodeproj
+│   │       ├── ChromaCatchLocationControl/       # spoof-focused SwiftUI app target
 │   │       └── ChromaCatchDNS/                   # DNS location guard extension
 │   │           ├── Info.plist                     # Extension config (packet-tunnel)
 │   │           └── ChromaCatchDNS.entitlements    # packet-tunnel-provider + App Group

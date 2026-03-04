@@ -1,10 +1,10 @@
-# ChromaCatch iOS Location Spoofer
+# ChromaCatchLocationControl (iOS)
 
 This directory contains a dedicated iOS app package for **location spoofing only**.
 
-- Project: `ChromaCatchLocationSpoof/ChromaCatchLocationSpoof.xcodeproj`
-- Main app source: `ChromaCatchLocationSpoof/ChromaCatchController/`
-- DNS extension: `ChromaCatchLocationSpoof/ChromaCatchDNS/`
+- Project: `ChromaCatchLocationControl/ChromaCatchLocationControl.xcodeproj`
+- Main app source: `ChromaCatchLocationControl/ChromaCatchLocationControl/`
+- DNS extension: `ChromaCatchLocationControl/ChromaCatchDNS/`
 
 The app UI is intentionally scoped to:
 - Spoof controls (dongle scan/connect, coordinate updates, location guard)

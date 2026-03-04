@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ChromaCatchControllerApp: App {
+struct ChromaCatchLocationControlApp: App {
     @StateObject private var coordinator = AppCoordinator()
 
     var body: some Scene {

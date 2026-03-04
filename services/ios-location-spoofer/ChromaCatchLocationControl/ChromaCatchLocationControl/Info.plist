@@ -4,7 +4,7 @@
 <dict>
     <!-- Standard keys (required when GENERATE_INFOPLIST_FILE = NO) -->
     <key>CFBundleDisplayName</key>
-    <string>ChromaCatch Spoof</string>
+    <string>ChromaCatchLocationControl</string>
     <key>CFBundleName</key>
     <string>$(PRODUCT_NAME)</string>
     <key>CFBundleIdentifier</key>
