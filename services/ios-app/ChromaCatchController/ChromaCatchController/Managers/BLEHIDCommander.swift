@@ -234,6 +234,7 @@ final class BLEHIDCommander: NSObject, ObservableObject {
     private var lastKeyboardInputReport = Data([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
     private var lastKeyboardOutputReport = Data([0x00])
     private var lastGamepadInputReport = Data([0x00, 0x00, 0x0F, 0x80, 0x80, 0x80, 0x80])
+    private var batteryLevel: UInt8 = 100
     private var lastKeyboardBootReport = Data(repeating: 0, count: 8)
     private var lastMouseBootReport = Data(repeating: 0, count: 3)
 
@@ -489,7 +490,7 @@ final class BLEHIDCommander: NSObject, ObservableObject {
         let batteryChar = CBMutableCharacteristic(
             type: kBatteryLevelUUID,
             properties: [.read, .notify],
-            value: Data([100]),
+            value: nil,
             permissions: [.readable]
         )
         let batteryService = CBMutableService(type: kBatteryServiceUUID, primary: false)
@@ -734,6 +735,10 @@ extension BLEHIDCommander: CBPeripheralManagerDelegate {
         }
         if uuid == kProtocolModeUUID {
             respondRead(request, with: Data([protocolMode]), on: peripheral)
+            return
+        }
+        if uuid == kBatteryLevelUUID {
+            respondRead(request, with: Data([batteryLevel]), on: peripheral)
             return
         }
 
