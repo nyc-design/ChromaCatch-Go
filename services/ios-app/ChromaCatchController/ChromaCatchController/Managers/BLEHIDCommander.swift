@@ -159,7 +159,7 @@ private let kAppearanceGamepad: UInt16 = 0x03C4
 // MARK: - BLEHIDCommander
 
 /// BLE HID peripheral that makes the iOS device act as a mouse/keyboard/gamepad.
-/// NOT @MainActor — CBPeripheralManager delegate runs on bleQueue, UI updates dispatched to main.
+/// CoreBluetooth callbacks are handled on main queue for maximum compatibility.
 final class BLEHIDCommander: NSObject, ObservableObject {
     // Published properties — only mutated on main thread.
     @Published var isAdvertising = false
@@ -168,7 +168,6 @@ final class BLEHIDCommander: NSObject, ObservableObject {
     @Published var currentProfile: HIDProfile = .combo
 
     // BLE internals.
-    private let bleQueue = DispatchQueue(label: "com.chromacatch.ble-hid", qos: .userInitiated)
     private var peripheralManager: CBPeripheralManager?
     private var reportCharacteristic: CBMutableCharacteristic?
     private var bootKeyboardInputCharacteristic: CBMutableCharacteristic?
@@ -209,79 +208,6 @@ final class BLEHIDCommander: NSObject, ObservableObject {
     // MARK: - Lifecycle
 
     func start(profile: HIDProfile = .combo) {
-        bleQueue.async { [weak self] in
-            self?.startOnBLEQueue(profile: profile)
-        }
-    }
-
-    func stop() {
-        bleQueue.async {
-            guard let pm = self.peripheralManager else { return }
-
-            hidLog.info("Stopping BLE HID")
-            self.peripheralManager = nil
-            self.reportCharacteristic = nil
-            self.bootKeyboardInputCharacteristic = nil
-            self.bootMouseInputCharacteristic = nil
-
-            pm.stopAdvertising()
-            pm.removeAllServices()
-            self.lock.lock()
-            self.subscribedCentrals.removeAll()
-            self.lock.unlock()
-            self.servicesAdded = 0
-            self.totalServices = 0
-        }
-
-        DispatchQueue.main.async {
-            self.isAdvertising = false
-            self.isConnected = false
-            self.connectedDeviceName = nil
-        }
-    }
-
-    /// Switch to a different HID profile at runtime.
-    /// Stops the current session, changes profile, and restarts.
-    /// Connected centrals will need to reconnect after the switch.
-    func switchProfile(_ profile: HIDProfile) {
-        bleQueue.async { [weak self] in
-            guard let self else { return }
-            let wasRunning = self.peripheralManager != nil
-
-            hidLog.info("Switching HID profile: \(self.activeProfile.rawValue) → \(profile.rawValue)")
-            self.activeProfile = profile
-            self.publishCurrentProfile(profile)
-
-            guard wasRunning else { return }
-
-            let pm = self.peripheralManager
-            self.peripheralManager = nil
-            self.reportCharacteristic = nil
-            self.bootKeyboardInputCharacteristic = nil
-            self.bootMouseInputCharacteristic = nil
-            self.lock.lock()
-            self.subscribedCentrals.removeAll()
-            self.lock.unlock()
-            self.servicesAdded = 0
-            self.totalServices = 0
-
-            pm?.stopAdvertising()
-            pm?.removeAllServices()
-
-            DispatchQueue.main.async {
-                self.isAdvertising = false
-                self.isConnected = false
-                self.connectedDeviceName = nil
-            }
-
-            // Brief delay to let BLE stack clean up before re-advertising.
-            self.bleQueue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.startOnBLEQueue(profile: profile)
-            }
-        }
-    }
-
-    private func startOnBLEQueue(profile: HIDProfile) {
         guard peripheralManager == nil else {
             hidLog.warning("BLE HID already started")
             return
@@ -295,9 +221,52 @@ final class BLEHIDCommander: NSObject, ObservableObject {
         hidLog.info("Starting BLE HID with profile: \(profile.rawValue)")
         peripheralManager = CBPeripheralManager(
             delegate: self,
-            queue: bleQueue,
+            queue: nil,
             options: [CBPeripheralManagerOptionShowPowerAlertKey: true]
         )
+    }
+
+    func stop() {
+        guard let pm = peripheralManager else { return }
+
+        hidLog.info("Stopping BLE HID")
+        peripheralManager = nil
+        reportCharacteristic = nil
+        bootKeyboardInputCharacteristic = nil
+        bootMouseInputCharacteristic = nil
+
+        pm.stopAdvertising()
+        pm.removeAllServices()
+        lock.lock()
+        subscribedCentrals.removeAll()
+        lock.unlock()
+        servicesAdded = 0
+        totalServices = 0
+
+        DispatchQueue.main.async {
+            self.isAdvertising = false
+            self.isConnected = false
+            self.connectedDeviceName = nil
+        }
+    }
+
+    /// Switch to a different HID profile at runtime.
+    /// Stops the current session, changes profile, and restarts.
+    /// Connected centrals will need to reconnect after the switch.
+    func switchProfile(_ profile: HIDProfile) {
+        let wasRunning = peripheralManager != nil
+        hidLog.info("Switching HID profile: \(self.activeProfile.rawValue) → \(profile.rawValue)")
+        activeProfile = profile
+        publishCurrentProfile(profile)
+
+        if wasRunning { stop() }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self else { return }
+            if wasRunning {
+                self.start(profile: profile)
+            }
+        }
     }
 
     // MARK: - Mouse Commands (Report ID 1)
@@ -377,12 +346,12 @@ final class BLEHIDCommander: NSObject, ObservableObject {
     // MARK: - Report Transmission
 
     private func sendReport(_ report: Data) {
-        bleQueue.async { [weak self] in
-            self?.sendReportOnBLEQueue(report)
+        DispatchQueue.main.async { [weak self] in
+            self?.sendReportOnMainQueue(report)
         }
     }
 
-    private func sendReportOnBLEQueue(_ report: Data) {
+    private func sendReportOnMainQueue(_ report: Data) {
         guard let pm = peripheralManager else { return }
 
         updateCachedReports(report)

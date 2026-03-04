@@ -111,10 +111,11 @@ class AppCoordinator: ObservableObject {
 
         // Migration: reset BLE HID after stability fixes so users can re-enable manually.
         let savedUseBLEHID: Bool
-        if UserDefaults.standard.bool(forKey: "useBLEHID") && !UserDefaults.standard.bool(forKey: "bleHIDFixedV3") {
+        if UserDefaults.standard.bool(forKey: "useBLEHID") && !UserDefaults.standard.bool(forKey: "bleHIDFixedV4") {
             UserDefaults.standard.set(false, forKey: "useBLEHID")
             UserDefaults.standard.set(true, forKey: "bleHIDFixedV2")
             UserDefaults.standard.set(true, forKey: "bleHIDFixedV3")
+            UserDefaults.standard.set(true, forKey: "bleHIDFixedV4")
             savedUseBLEHID = false
         } else {
             savedUseBLEHID = UserDefaults.standard.bool(forKey: "useBLEHID")
