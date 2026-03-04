@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Standard keys (required when GENERATE_INFOPLIST_FILE = NO) -->
+    <key>CFBundleDisplayName</key>
+    <string>ChromaCatch Spoof</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleVersion</key>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(MARKETING_VERSION)</string>
+    <key>CFBundlePackageType</key>
+    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <key>UIApplicationSupportsMultipleScenes</key>
+        <false/>
+    </dict>
+    <key>UILaunchScreen</key>
+    <dict/>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UIApplicationSupportsIndirectInputEvents</key>
+    <true/>
+
+    <!-- External Accessory Protocol (must match dongle's iAP2 protocol string) -->
+    <key>UISupportedExternalAccessoryProtocols</key>
+    <array>
+        <string>com.feasycom.BLEAssistant</string>
+    </array>
+
+    <!-- Background Modes -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>external-accessory</string>
+        <string>bluetooth-central</string>
+        <string>bluetooth-peripheral</string>
+        <string>location</string>
+    </array>
+
+    <!-- Bluetooth Usage Descriptions -->
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>ChromaCatch uses Bluetooth to communicate with the iTools GPS dongle and optionally emulate a BLE HID controller.</string>
+
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>ChromaCatch can advertise as a Bluetooth mouse/keyboard/gamepad for direct device control.</string>
+
+    <!-- Location Usage (GPS verification + background keepalive) -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>ChromaCatch reads your GPS location to verify the spoofed coordinates are being applied correctly.</string>
+
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>ChromaCatch needs continuous location access to keep the GPS dongle active in the background. Without this, the spoofed location will revert when the app is minimized.</string>
+
+    <!-- Local Network Access (for ESP32 HTTP relay) -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>ChromaCatch connects to local devices for GPS data processing.</string>
+
+    <!-- Allow plain HTTP to local network (ESP32) -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+</dict>
+</plist>
