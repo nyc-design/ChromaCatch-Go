@@ -24,6 +24,7 @@ private let kBootKeyboardInputReportUUID = CBUUID(string: "00002A22-0000-1000-80
 private let kBootMouseInputReportUUID = CBUUID(string: "00002A33-0000-1000-8000-00805F9B34FB")
 
 private let kGenericAccessUUID = CBUUID(string: "00001800-0000-1000-8000-00805F9B34FB")
+private let kDeviceNameUUID = CBUUID(string: "00002A00-0000-1000-8000-00805F9B34FB")
 private let kAppearanceUUID = CBUUID(string: "00002A01-0000-1000-8000-00805F9B34FB")
 
 private let kBatteryServiceUUID = CBUUID(string: "0000180F-0000-1000-8000-00805F9B34FB")
@@ -31,7 +32,7 @@ private let kBatteryLevelUUID = CBUUID(string: "00002A19-0000-1000-8000-00805F9B
 
 private let kDeviceInfoServiceUUID = CBUUID(string: "0000180A-0000-1000-8000-00805F9B34FB")
 private let kManufacturerNameUUID = CBUUID(string: "00002A29-0000-1000-8000-00805F9B34FB")
-private let kPnPIDUUID = CBUUID(string: "00002A50-0000-1000-8000-00805F9B34FB")
+private let kModelNumberUUID = CBUUID(string: "00002A24-0000-1000-8000-00805F9B34FB")
 
 private let kReportReferenceUUID = CBUUID(string: "00002908-0000-1000-8000-00805F9B34FB")
 
@@ -861,7 +862,34 @@ final class BLEHIDCommander: NSObject, ObservableObject {
         switchOutputReport01Characteristic = nil
         switchOutputReport10Characteristic = nil
 
-        // --- 1) Battery Service ---
+        let advertisedName: String = (activeProfile == .switchPro) ? "Pro Controller" : "ChromaCatch HID"
+        let appearance: UInt16
+        switch activeProfile {
+        case .mouse:
+            appearance = kAppearanceMouse
+        case .keyboard, .combo:
+            appearance = kAppearanceKeyboard
+        case .gamepad, .switchPro:
+            appearance = kAppearanceGamepad
+        }
+
+        // --- 1) Generic Access Service ---
+        let deviceNameChar = CBMutableCharacteristic(
+            type: kDeviceNameUUID,
+            properties: [.read],
+            value: Data(advertisedName.utf8),
+            permissions: [.readable]
+        )
+        let appearanceChar = CBMutableCharacteristic(
+            type: kAppearanceUUID,
+            properties: [.read],
+            value: Data([UInt8(appearance & 0xFF), UInt8((appearance >> 8) & 0xFF)]),
+            permissions: [.readable]
+        )
+        let gapService = CBMutableService(type: kGenericAccessUUID, primary: true)
+        gapService.characteristics = [deviceNameChar, appearanceChar]
+
+        // --- 2) Battery Service ---
         let batteryChar = CBMutableCharacteristic(
             type: kBatteryLevelUUID,
             properties: [.read, .notify],
@@ -871,7 +899,23 @@ final class BLEHIDCommander: NSObject, ObservableObject {
         let batteryService = CBMutableService(type: kBatteryServiceUUID, primary: false)
         batteryService.characteristics = [batteryChar]
 
-        // --- 2) HID Service (primary) ---
+        // --- 3) Device Information Service ---
+        let manufacturerChar = CBMutableCharacteristic(
+            type: kManufacturerNameUUID,
+            properties: [.read],
+            value: Data((activeProfile == .switchPro ? "Nintendo Co., Ltd." : "ChromaCatch").utf8),
+            permissions: [.readable]
+        )
+        let modelNumberChar = CBMutableCharacteristic(
+            type: kModelNumberUUID,
+            properties: [.read],
+            value: Data((activeProfile == .switchPro ? "Pro Controller" : "ChromaCatch HID").utf8),
+            permissions: [.readable]
+        )
+        let deviceInfoService = CBMutableService(type: kDeviceInfoServiceUUID, primary: false)
+        deviceInfoService.characteristics = [manufacturerChar, modelNumberChar]
+
+        // --- 4) HID Service (primary) ---
         let reportDescriptor: [UInt8]
         switch self.activeProfile {
         case .mouse: reportDescriptor = mouseReportDescriptor
@@ -979,8 +1023,10 @@ final class BLEHIDCommander: NSObject, ObservableObject {
         let hidService = CBMutableService(type: kHIDServiceUUID, primary: true)
         hidService.characteristics = hidCharacteristics
 
-        totalServices = 2
+        totalServices = 4
+        pm.add(gapService)
         pm.add(batteryService)
+        pm.add(deviceInfoService)
         pm.add(hidService)
     }
 

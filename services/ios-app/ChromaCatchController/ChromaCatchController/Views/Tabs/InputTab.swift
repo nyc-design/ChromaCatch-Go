@@ -297,6 +297,28 @@ private struct GamepadControlPane: View {
                     }
                 }
             }
+
+            HStack(spacing: 8) {
+                HoldPadButton("L", color: .orange) {
+                    coordinator.sendManualGamepadButton(index: 4, pressed: true)
+                } onRelease: {
+                    coordinator.sendManualGamepadButton(index: 4, pressed: false)
+                }
+
+                HoldPadButton("R", color: .orange) {
+                    coordinator.sendManualGamepadButton(index: 5, pressed: true)
+                } onRelease: {
+                    coordinator.sendManualGamepadButton(index: 5, pressed: false)
+                }
+
+                Button {
+                    coordinator.sendManualSwitchSyncPress()
+                } label: {
+                    Label("L + R", systemImage: "dot.radiowaves.left.and.right")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            }
         }
     }
 }

@@ -750,6 +750,17 @@ class AppCoordinator: ObservableObject {
         bleHIDCommander.gamepadSetHat(0x0F)
     }
 
+    func sendManualSwitchSyncPress() {
+        guard canSendManualBLEInput() else { return }
+        bleHIDCommander.gamepadButtonPress(buttonIndex: 4) // L
+        bleHIDCommander.gamepadButtonPress(buttonIndex: 5) // R
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self, self.canSendManualBLEInput() else { return }
+            self.bleHIDCommander.gamepadButtonRelease(buttonIndex: 4)
+            self.bleHIDCommander.gamepadButtonRelease(buttonIndex: 5)
+        }
+    }
+
     private func usageForCharacter(_ c: Character) -> (UInt8, UInt8)? {
         if let scalar = c.unicodeScalars.first?.value {
             switch scalar {
