@@ -1,8 +1,8 @@
 import Foundation
 
-/// WebSocket client for connecting to ChromaCatch backend.
-/// Receives LocationUpdateMessage and HIDCommandMessage from the backend.
-/// Sends status updates and heartbeat pongs.
+/// WebSocket client for connecting to the location service.
+/// Receives LocationUpdateMessage updates and heartbeat pings.
+/// Sends location status updates and heartbeat pongs.
 class WebSocketManager: NSObject, ObservableObject, URLSessionWebSocketDelegate {
     private var webSocketTask: URLSessionWebSocketTask?
     private var session: URLSession!
@@ -16,7 +16,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionWebSocketDelegate 
 
     @Published var isConnected = false
 
-    /// Called when a text message is received from the backend
+    /// Called when a text message is received from the location service.
     var onMessage: ((String) -> Void)?
 
     private let reconnectBaseDelay: TimeInterval = 3.0

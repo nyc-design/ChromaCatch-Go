@@ -14,7 +14,7 @@ class DNSFilterManager: ObservableObject {
     private var statusObserver: NSObjectProtocol?
     private let log: (String) -> Void
 
-    private static let bundleId = "com.chromacatch.controller.dns"
+    private static let bundleId = "com.chromacatch.spoof.dns"
 
     init(log: @escaping (String) -> Void = { NSLog("[DNSFilter] %@", $0) }) {
         self.log = log

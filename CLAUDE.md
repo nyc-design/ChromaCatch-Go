@@ -240,8 +240,7 @@ ChromaCatch-Go/
 │   │   └── ChromaCatchLocationSpoof/
 │   │       ├── ChromaCatchLocationSpoof.xcodeproj
 │   │       ├── ChromaCatchController/            # spoof-focused SwiftUI app target
-│   │       ├── ChromaCatchDNS/                   # DNS location guard extension
-│   │       └── ChromaCatchBroadcast/             # retained copy (safe to remove if unused)
+│   │       └── ChromaCatchDNS/                   # DNS location guard extension
 │   │           ├── Info.plist                     # Extension config (packet-tunnel)
 │   │           └── ChromaCatchDNS.entitlements    # packet-tunnel-provider + App Group
 │   └── esp32/                               # ESP32 firmware (v2: multi-mode HID)

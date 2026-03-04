@@ -48,16 +48,12 @@
     <array>
         <string>external-accessory</string>
         <string>bluetooth-central</string>
-        <string>bluetooth-peripheral</string>
         <string>location</string>
     </array>
 
     <!-- Bluetooth Usage Descriptions -->
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>ChromaCatch uses Bluetooth to communicate with the iTools GPS dongle and optionally emulate a BLE HID controller.</string>
-
-    <key>NSBluetoothPeripheralUsageDescription</key>
-    <string>ChromaCatch can advertise as a Bluetooth mouse/keyboard/gamepad for direct device control.</string>
+    <string>ChromaCatch uses Bluetooth to communicate with the iTools GPS dongle.</string>
 
     <!-- Location Usage (GPS verification + background keepalive) -->
     <key>NSLocationWhenInUseUsageDescription</key>
@@ -66,15 +62,5 @@
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
     <string>ChromaCatch needs continuous location access to keep the GPS dongle active in the background. Without this, the spoofed location will revert when the app is minimized.</string>
 
-    <!-- Local Network Access (for ESP32 HTTP relay) -->
-    <key>NSLocalNetworkUsageDescription</key>
-    <string>ChromaCatch connects to local devices for GPS data processing.</string>
-
-    <!-- Allow plain HTTP to local network (ESP32) -->
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsLocalNetworking</key>
-        <true/>
-    </dict>
 </dict>
 </plist>

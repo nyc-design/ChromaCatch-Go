@@ -57,7 +57,7 @@ class DongleController: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// Update the target coordinates (called when backend sends LocationUpdateMessage)
+    /// Update the target coordinates (called when location service sends LocationUpdateMessage)
     func updateCoordinates(lat: Double, lon: Double, altitude: Double = 10.0,
                            speed: Double = 0.0, heading: Double = 0.0) {
         currentLat = lat
