@@ -1138,7 +1138,10 @@ final class BLEHIDCommander: NSObject, ObservableObject {
             permissions: [.readable]
         )
         // External Report Reference descriptor links HID report map to Battery Level (2A19).
-        reportMapChar.descriptors = [CBMutableDescriptor(type: CBUUID(string: "00002907-0000-1000-8000-00805F9B34FB"), value: Data([0x19, 0x2A]))]
+        // For minimal Switch profile we intentionally omit this extra link.
+        if activeProfile != .switchPro {
+            reportMapChar.descriptors = [CBMutableDescriptor(type: CBUUID(string: "00002907-0000-1000-8000-00805F9B34FB"), value: Data([0x19, 0x2A]))]
+        }
 
         // Control Point — host writes suspend/exit suspend.
         let controlPointChar = CBMutableCharacteristic(
@@ -1232,11 +1235,18 @@ final class BLEHIDCommander: NSObject, ObservableObject {
         let hidService = CBMutableService(type: kHIDServiceUUID, primary: true)
         hidService.characteristics = hidCharacteristics
 
-        totalServices = 4
-        pm.add(gapService)
-        pm.add(batteryService)
-        pm.add(deviceInfoService)
-        pm.add(hidService)
+        let servicesToAdd: [CBMutableService]
+        if activeProfile == .switchPro {
+            // Minimal BLE test profile: advertise only HID service to reduce GATT surface.
+            servicesToAdd = [hidService]
+        } else {
+            servicesToAdd = [gapService, batteryService, deviceInfoService, hidService]
+        }
+
+        totalServices = servicesToAdd.count
+        for service in servicesToAdd {
+            pm.add(service)
+        }
     }
 
     private func createReportCharacteristic(reportID: UInt8,
