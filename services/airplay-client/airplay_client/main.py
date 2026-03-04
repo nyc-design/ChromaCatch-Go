@@ -110,7 +110,7 @@ class ChromaCatchClient:
             "gamepad": "gamepad",
             # Optional extended modes (if backend sends them)
             "switch_pro": "switch_controller",
-            "switch_wired_bt_input": "switch_wired_bt_input",
+            "switch_wired_bt_input": "switch_controller",
         }
         esp32_mode = mode_map.get(msg.hid_mode)
         if esp32_mode is None:
@@ -120,7 +120,7 @@ class ChromaCatchClient:
         from airplay_client.commander.esp32_commander import ESP32Commander
         if isinstance(self._commander, ESP32Commander):
             try:
-                legacy_output_mode = "gamepad" if esp32_mode in {"gamepad", "switch_controller", "switch_wired_bt_input"} else "mouse_keyboard"
+                legacy_output_mode = "gamepad" if esp32_mode in {"gamepad", "switch_controller"} else "mouse_keyboard"
                 result = await self._commander._esp32.set_mode(mode=esp32_mode, output_mode=legacy_output_mode)
                 logger.info("ESP32 HID mode changed to %s: %s", esp32_mode, result)
             except Exception as e:

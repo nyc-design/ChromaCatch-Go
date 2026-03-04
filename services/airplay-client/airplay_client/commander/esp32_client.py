@@ -1,4 +1,4 @@
-"""HTTP client for sending HID commands to the ESP32."""
+"""ESP32 command client (WebSocket-first, HTTP fallback)."""
 
 import asyncio
 import json
@@ -7,6 +7,8 @@ import urllib.error
 import urllib.request
 
 import httpx
+import websockets
+from websockets.exceptions import WebSocketException
 
 from airplay_client.config import client_settings as settings
 
@@ -45,13 +47,21 @@ class HIDCommand:
 
 
 class ESP32Client:
-    """Sends HID mouse commands to the ESP32 over WiFi HTTP."""
+    """Sends HID commands to ESP32 over WiFi with WS-first transport."""
 
-    def __init__(self, host: str | None = None, port: int | None = None, timeout: float | None = None):
+    def __init__(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        ws_port: int | None = None,
+        timeout: float | None = None,
+    ):
         self.host = host or settings.esp32_host
         self.port = port or settings.esp32_port
+        self.ws_port = ws_port or settings.esp32_ws_port
         self.timeout = timeout or settings.esp32_timeout
         self._base_url = f"http://{self.host}:{self.port}"
+        self._ws_url = f"ws://{self.host}:{self.ws_port}"
         limits = httpx.Limits(max_connections=10, max_keepalive_connections=5)
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
@@ -59,6 +69,9 @@ class ESP32Client:
             trust_env=False,
             limits=limits,
         )
+        self._ws = None
+        self._ws_lock = asyncio.Lock()
+        self._ws_seq = 0
 
     def _urllib_request(self, method: str, path: str, payload: dict | None = None) -> dict:
         """Fallback HTTP request using stdlib urllib (runs in thread)."""
@@ -76,12 +89,39 @@ class ESP32Client:
     async def send_command(self, command: HIDCommand) -> dict:
         """Send a HID command to the ESP32."""
         payload = command.to_dict()
-        logger.debug("Sending command to ESP32: %s", payload)
+        logger.debug("Sending command to ESP32 (WS preferred): %s", payload)
+        try:
+            return await self._send_command_ws(payload)
+        except Exception as e:
+            logger.debug("ESP32 WS command failed, falling back to HTTP: %s", e)
+            return await self._send_command_http(payload)
+
+    async def _send_command_ws(self, payload: dict) -> dict:
+        async with self._ws_lock:
+            ws = await self._ensure_ws()
+            self._ws_seq += 1
+            seq = self._ws_seq
+            message = {"type": "command", "seq": seq, **payload}
+            await ws.send(json.dumps(message))
+            raw = await asyncio.wait_for(ws.recv(), timeout=self.timeout)
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8", errors="replace")
+            result = json.loads(raw) if raw else {}
+            if isinstance(result, dict) and result.get("seq") is not None and result.get("seq") != seq:
+                logger.warning("ESP32 WS response seq mismatch: expected=%s got=%s", seq, result.get("seq"))
+            return result
+
+    async def _send_command_http(self, payload: dict) -> dict:
+        logger.debug("Sending command to ESP32 via HTTP fallback: %s", payload)
         try:
             response = await self._client.post("/command", json=payload)
+            if response.status_code in (200, 409):
+                result = response.json()
+                logger.debug("ESP32 HTTP response: %s", result)
+                return result
             response.raise_for_status()
             result = response.json()
-            logger.debug("ESP32 response: %s", result)
+            logger.debug("ESP32 response (http): %s", result)
             return result
         except httpx.ConnectError as e:
             logger.warning("HTTPX connect failed to ESP32 (%s), retrying with urllib", e)
@@ -106,13 +146,27 @@ class ESP32Client:
                 return result
             except Exception as ex:
                 last_error = ex
-            logger.error("Cannot connect to ESP32 at %s", self._base_url)
+            logger.error("Cannot connect to ESP32 at %s (HTTP fallback)", self._base_url)
             if last_error:
                 raise last_error
             raise
         except httpx.HTTPStatusError as e:
             logger.error("ESP32 returned error: %s", e.response.text)
             raise
+
+    async def _ensure_ws(self):
+        if self._ws is not None and not self._ws.closed:
+            return self._ws
+        self._ws = await websockets.connect(
+            self._ws_url,
+            open_timeout=self.timeout,
+            ping_interval=20,
+            ping_timeout=self.timeout,
+            close_timeout=1,
+            max_queue=16,
+        )
+        logger.debug("Connected to ESP32 WS at %s", self._ws_url)
+        return self._ws
 
     async def move(self, dx: int, dy: int) -> dict:
         return await self.send_command(HIDCommand.move(dx, dy))
@@ -125,6 +179,22 @@ class ESP32Client:
 
     async def ping(self) -> bool:
         """Check if the ESP32 is reachable."""
+        # Try lightweight WS ping first (preferred command channel)
+        try:
+            async with self._ws_lock:
+                ws = await self._ensure_ws()
+                self._ws_seq += 1
+                seq = self._ws_seq
+                await ws.send(json.dumps({"type": "ping", "seq": seq}))
+                raw = await asyncio.wait_for(ws.recv(), timeout=self.timeout)
+                if isinstance(raw, bytes):
+                    raw = raw.decode("utf-8", errors="replace")
+                result = json.loads(raw) if raw else {}
+                if isinstance(result, dict) and result.get("type") == "pong":
+                    return True
+        except (TimeoutError, OSError, WebSocketException, json.JSONDecodeError):
+            await self._close_ws()
+
         try:
             response = await self._client.get("/ping")
             return response.status_code == 200
@@ -167,7 +237,16 @@ class ESP32Client:
             return await asyncio.to_thread(self._urllib_request, "POST", "/mode", kwargs)
 
     async def close(self) -> None:
+        await self._close_ws()
         await self._client.aclose()
+
+    async def _close_ws(self) -> None:
+        if self._ws is not None:
+            try:
+                await self._ws.close()
+            except Exception:
+                pass
+            self._ws = None
 
     async def _curl_command(self, payload: dict) -> dict:
         """Fallback command sender via curl subprocess."""

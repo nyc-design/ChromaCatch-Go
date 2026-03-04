@@ -30,6 +30,7 @@ class ClientSettings(BaseSettings):
     # ESP32 connection (used when commander_mode="esp32")
     esp32_host: str = "192.168.1.100"
     esp32_port: int = 80
+    esp32_ws_port: int = 81
     esp32_timeout: float = 2.0
 
     # AirPlay / UxPlay

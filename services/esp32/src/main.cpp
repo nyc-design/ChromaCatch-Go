@@ -4,9 +4,10 @@
  * Goals:
  *  - Accept commands from BOTH WiFi (HTTP) and wired (USB Serial) concurrently
  *  - Prioritize wired commands when both are active
- *  - Support 6 packaged HID modes
+ *  - Support packaged HID modes for automation
  *  - Auto-select HID output transport: USB (if host mounted) else BLE (if connected)
- *  - Expose simple e-ink display command APIs (rendering is still stubbed to Serial)
+ *  - Expose Waveshare e-ink display APIs
+ *  - Accept command input over WebSocket with HTTP fallback
  *
  * Modes:
  *  1) combo                  (keyboard + mouse)
@@ -14,7 +15,6 @@
  *  3) mouse_only
  *  4) gamepad
  *  5) switch_controller
- *  6) switch_wired_bt_input  (wired output path only; BT input bridge placeholder)
  *
  * HTTP API:
  *   GET  /ping
@@ -25,13 +25,21 @@
  *   GET  /display
  *   POST /display
  *   POST /display/clear
+ *
+ * WebSocket API:
+ *   ws://<ip>:81
+ *   JSON command in:  {"type":"command","seq":1,"action":"move","dx":1,"dy":2}
+ *   JSON response out: {"type":"ack","seq":1,"status":"ok",...}
  */
 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <WebServer.h>
+#include <WebSocketsServer.h>
 #include <ArduinoJson.h>
+#include <GxEPD2_BW.h>
+#include <Fonts/FreeMonoBold9pt7b.h>
 
 #include <NimBLEDevice.h>
 #include <BleCombo.h>
@@ -45,6 +53,7 @@
 const char* WIFI_SSID       = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD   = "YOUR_WIFI_PASSWORD";
 const int   HTTP_PORT       = 80;
+const int   WS_PORT         = 81;
 const char* DEVICE_NAME     = "ChromaCatch";
 
 // GPIO pins for 3-button menu (active LOW with pull-up)
@@ -52,8 +61,15 @@ const int GPIO_UP   = 35;
 const int GPIO_DOWN = 34;
 const int GPIO_SEL  = 33;
 
+// Waveshare e-ink SPI pins (update for your wiring)
+const int EPD_CS   = 10;
+const int EPD_DC   = 9;
+const int EPD_RST  = 8;
+const int EPD_BUSY = 7;
+
 // Wired command priority window. During this window, WiFi /command is deferred.
 const unsigned long WIRED_PRIORITY_WINDOW_MS = 250;
+const unsigned long WS_PRIORITY_WINDOW_MS = 200;
 
 // ============================================================
 // Mode enums
@@ -64,7 +80,6 @@ enum DeviceMode {
     MODE_MOUSE_ONLY,
     MODE_GAMEPAD,
     MODE_SWITCH_CONTROLLER,
-    MODE_SWITCH_WIRED_BT_INPUT,
     MODE_COUNT
 };
 
@@ -82,6 +97,7 @@ enum RuntimeDelivery {
 
 enum CommandSource {
     SOURCE_WIFI = 0,
+    SOURCE_WEBSOCKET,
     SOURCE_WIRED,
 };
 
@@ -89,6 +105,7 @@ enum CommandSource {
 // Globals
 // ============================================================
 WebServer server(HTTP_PORT);
+WebSocketsServer wsServer(WS_PORT);
 
 // BLE outputs (created/destroyed on mode changes)
 BleComboKeyboard* bleComboKb = nullptr;
@@ -100,6 +117,9 @@ DeliveryPolicy deliveryPolicy = DELIVERY_AUTO;
 
 String serialBuffer = "";
 unsigned long lastWiredCommandAtMs = 0;
+unsigned long lastWSCommandAtMs = 0;
+uint32_t wsMsgCounter = 0;
+size_t wsConnectedClients = 0;
 
 // Menu
 int menuIndex = 0;
@@ -117,6 +137,8 @@ struct DisplayState {
     unsigned long expiresAtMs = 0;
 };
 DisplayState displayState;
+bool einkReady = false;
+GxEPD2_BW<GxEPD2_213_BN, GxEPD2_213_BN::HEIGHT> eink(GxEPD2_213_BN(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
 
 // ============================================================
 // Helpers
@@ -133,7 +155,7 @@ int8_t clampInt8(int value) {
 }
 
 bool isSwitchMode(DeviceMode mode) {
-    return mode == MODE_SWITCH_CONTROLLER || mode == MODE_SWITCH_WIRED_BT_INPUT;
+    return mode == MODE_SWITCH_CONTROLLER;
 }
 
 bool modeAllowsMouse(DeviceMode mode) {
@@ -145,12 +167,11 @@ bool modeAllowsKeyboard(DeviceMode mode) {
 }
 
 bool modeAllowsGamepad(DeviceMode mode) {
-    return mode == MODE_GAMEPAD || mode == MODE_SWITCH_CONTROLLER || mode == MODE_SWITCH_WIRED_BT_INPUT;
+    return mode == MODE_GAMEPAD || mode == MODE_SWITCH_CONTROLLER;
 }
 
 bool modeUsesBleOutput(DeviceMode mode) {
-    // switch_wired_bt_input is intentionally wired output only (bridge placeholder mode)
-    return mode != MODE_SWITCH_WIRED_BT_INPUT;
+    return mode == MODE_COMBO || mode == MODE_KEYBOARD_ONLY || mode == MODE_MOUSE_ONLY || mode == MODE_GAMEPAD || mode == MODE_SWITCH_CONTROLLER;
 }
 
 bool modeUsesBleCombo(DeviceMode mode) {
@@ -168,7 +189,6 @@ const char* modeToString(DeviceMode mode) {
         case MODE_MOUSE_ONLY: return "mouse_only";
         case MODE_GAMEPAD: return "gamepad";
         case MODE_SWITCH_CONTROLLER: return "switch_controller";
-        case MODE_SWITCH_WIRED_BT_INPUT: return "switch_wired_bt_input";
         default: return "combo";
     }
 }
@@ -194,6 +214,10 @@ bool wiredPriorityActive() {
     return (millis() - lastWiredCommandAtMs) <= WIRED_PRIORITY_WINDOW_MS;
 }
 
+bool wsPriorityActive() {
+    return (millis() - lastWSCommandAtMs) <= WS_PRIORITY_WINDOW_MS;
+}
+
 DeviceMode parseModeString(const String& raw) {
     if (raw.length() == 0) return currentMode;
 
@@ -202,9 +226,8 @@ DeviceMode parseModeString(const String& raw) {
     if (raw == "mouse" || raw == "mouse_only") return MODE_MOUSE_ONLY;
     if (raw == "gamepad" || raw == "general_gamepad") return MODE_GAMEPAD;
     if (raw == "switch" || raw == "switch_pro" || raw == "switch_controller") return MODE_SWITCH_CONTROLLER;
-    if (raw == "switch_wired_bt_input" || raw == "switch_controller_wired_bt_input" || raw == "switch_wired") {
-        return MODE_SWITCH_WIRED_BT_INPUT;
-    }
+    // Legacy compatibility aliases for removed BT-input mode.
+    if (raw == "switch_wired_bt_input" || raw == "switch_controller_wired_bt_input" || raw == "switch_wired") return MODE_SWITCH_CONTROLLER;
     return currentMode;
 }
 
@@ -215,10 +238,16 @@ DeliveryPolicy parseDeliveryPolicy(const String& raw) {
 }
 
 // ============================================================
-// E-ink display (stub renderer)
+// E-ink display (Waveshare via GxEPD2)
 // ============================================================
 void displayInit() {
-    Serial.println("[E-ink] Initialized (stub renderer)");
+    Serial.println("[E-ink] Initializing...");
+    eink.init(115200, true, 50, false);
+    eink.setRotation(1);
+    eink.setTextColor(GxEPD_BLACK);
+    eink.setFont(&FreeMonoBold9pt7b);
+    einkReady = true;
+    Serial.println("[E-ink] Initialized");
 }
 
 void renderDisplayNow() {
@@ -227,6 +256,20 @@ void renderDisplayNow() {
     Serial.println(displayState.line2);
     Serial.println(displayState.line3);
     Serial.println("=============");
+
+    if (!einkReady) return;
+
+    eink.setFullWindow();
+    eink.firstPage();
+    do {
+        eink.fillScreen(GxEPD_WHITE);
+        eink.setCursor(2, 22);
+        eink.print(displayState.line1);
+        eink.setCursor(2, 50);
+        eink.print(displayState.line2);
+        eink.setCursor(2, 78);
+        eink.print(displayState.line3);
+    } while (eink.nextPage());
 }
 
 void displaySet(const String& l1, const String& l2 = "", const String& l3 = "", bool sticky = true, unsigned long ttlMs = 0) {
@@ -262,7 +305,7 @@ void displayMenu() {
     }
     Serial.println("========================");
 
-    displaySet(mode, "delivery=" + policy, "wired>wifi priority", true, 0);
+    displaySet(mode, "delivery=" + policy, "wired>ws>http", true, 0);
 }
 
 void displayStatus(const String& l1, const String& l2 = "", const String& l3 = "") {
@@ -337,11 +380,6 @@ bool isBLEConnected() {
 RuntimeDelivery chooseRuntimeDelivery() {
     bool usbAvailable = isUSBMounted();
     bool bleAvailable = isBLEConnected();
-
-    // Mode 6 explicitly wires output only
-    if (currentMode == MODE_SWITCH_WIRED_BT_INPUT) {
-        return usbAvailable ? RUNTIME_USB : RUNTIME_NONE;
-    }
 
     switch (deliveryPolicy) {
         case DELIVERY_FORCE_USB:
@@ -815,7 +853,38 @@ void executeCommand(JsonDocument& doc, JsonDocument& response, CommandSource sou
     String action = doc["action"].as<String>();
     response["action"] = action;
     response["mode"] = modeToString(currentMode);
-    response["source"] = source == SOURCE_WIRED ? "wired" : "wifi";
+    if (source == SOURCE_WIRED) response["source"] = "wired";
+    else if (source == SOURCE_WEBSOCKET) response["source"] = "websocket";
+    else response["source"] = "wifi";
+
+    // Control-plane actions (do not require active HID output transport)
+    if (action == "set_mode") {
+        if (doc["mode"].is<const char*>()) {
+            currentMode = parseModeString(doc["mode"].as<String>());
+            initBLE();
+            displayMenu();
+        }
+        response["status"] = "ok";
+        response["mode"] = modeToString(currentMode);
+        response["delivery_policy"] = deliveryPolicyToString(deliveryPolicy);
+        return;
+    }
+    if (action == "set_delivery_policy") {
+        if (doc["delivery_policy"].is<const char*>()) {
+            deliveryPolicy = parseDeliveryPolicy(doc["delivery_policy"].as<String>());
+            displayMenu();
+        } else if (doc["policy"].is<const char*>()) {
+            deliveryPolicy = parseDeliveryPolicy(doc["policy"].as<String>());
+            displayMenu();
+        } else if (doc["value"].is<const char*>()) {
+            deliveryPolicy = parseDeliveryPolicy(doc["value"].as<String>());
+            displayMenu();
+        }
+        response["status"] = "ok";
+        response["delivery_policy"] = deliveryPolicyToString(deliveryPolicy);
+        response["mode"] = modeToString(currentMode);
+        return;
+    }
 
     RuntimeDelivery delivery = chooseRuntimeDelivery();
     response["delivery"] = runtimeDeliveryToString(delivery);
@@ -864,9 +933,11 @@ void handleStatus() {
     doc["usb_mounted"] = isUSBMounted();
     doc["ble_connected"] = isBLEConnected();
     doc["wired_priority_active"] = wiredPriorityActive();
+    doc["ws_priority_active"] = wsPriorityActive();
     doc["wired_priority_window_ms"] = WIRED_PRIORITY_WINDOW_MS;
-    doc["wired_bt_input_bridge_ready"] = false;
-    doc["wired_bt_input_bridge_note"] = "Mode switch_wired_bt_input currently uses command bridge input (BT input bridge TBD)";
+    doc["ws_priority_window_ms"] = WS_PRIORITY_WINDOW_MS;
+    doc["ws_port"] = WS_PORT;
+    doc["ws_connected_clients"] = wsConnectedClients;
     sendJson(200, doc);
 }
 
@@ -985,6 +1056,14 @@ void handleCommand() {
         sendJson(409, deferred);
         return;
     }
+    if (wsPriorityActive()) {
+        JsonDocument deferred;
+        deferred["status"] = "deferred";
+        deferred["reason"] = "websocket_priority_window_active";
+        deferred["window_ms"] = WS_PRIORITY_WINDOW_MS;
+        sendJson(409, deferred);
+        return;
+    }
 
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, server.arg("plain"));
@@ -1002,6 +1081,95 @@ void handleCommand() {
     else if (status == "deferred") code = 409;
 
     sendJson(code, response);
+}
+
+// ============================================================
+// WebSocket command input (priority: wired > websocket > http)
+// ============================================================
+void sendWSJson(uint8_t clientId, JsonDocument& doc) {
+    String out;
+    serializeJson(doc, out);
+    wsServer.sendTXT(clientId, out);
+}
+
+void processWSCommand(uint8_t clientId, JsonDocument& doc) {
+    JsonDocument response;
+
+    if (wiredPriorityActive()) {
+        response["type"] = "ack";
+        response["status"] = "deferred";
+        response["reason"] = "wired_priority_window_active";
+        response["window_ms"] = WIRED_PRIORITY_WINDOW_MS;
+        if (doc["seq"].is<uint32_t>()) response["seq"] = doc["seq"].as<uint32_t>();
+        sendWSJson(clientId, response);
+        return;
+    }
+
+    lastWSCommandAtMs = millis();
+    executeCommand(doc, response, SOURCE_WEBSOCKET);
+    response["type"] = "ack";
+    if (doc["seq"].is<uint32_t>()) response["seq"] = doc["seq"].as<uint32_t>();
+    sendWSJson(clientId, response);
+}
+
+void onWSEvent(uint8_t clientId, WStype_t type, uint8_t* payload, size_t length) {
+    switch (type) {
+        case WStype_CONNECTED: {
+            wsConnectedClients = wsServer.connectedClients();
+            Serial.printf("[WS] Client %u connected (%u total)\n", clientId, static_cast<unsigned>(wsConnectedClients));
+            JsonDocument hello;
+            hello["type"] = "hello";
+            hello["status"] = "ok";
+            hello["mode"] = modeToString(currentMode);
+            hello["delivery_policy"] = deliveryPolicyToString(deliveryPolicy);
+            hello["wired_priority_window_ms"] = WIRED_PRIORITY_WINDOW_MS;
+            hello["ws_priority_window_ms"] = WS_PRIORITY_WINDOW_MS;
+            sendWSJson(clientId, hello);
+            break;
+        }
+        case WStype_DISCONNECTED:
+            wsConnectedClients = wsServer.connectedClients();
+            Serial.printf("[WS] Client %u disconnected (%u total)\n", clientId, static_cast<unsigned>(wsConnectedClients));
+            break;
+        case WStype_TEXT: {
+            wsMsgCounter++;
+            JsonDocument doc;
+            DeserializationError err = deserializeJson(doc, payload, length);
+            if (err) {
+                JsonDocument bad;
+                bad["type"] = "ack";
+                bad["status"] = "error";
+                bad["error"] = "invalid json";
+                sendWSJson(clientId, bad);
+                return;
+            }
+
+            String msgType = doc["type"].as<String>();
+            if (msgType == "ping") {
+                JsonDocument pong;
+                pong["type"] = "pong";
+                if (doc["seq"].is<uint32_t>()) pong["seq"] = doc["seq"].as<uint32_t>();
+                pong["counter"] = wsMsgCounter;
+                sendWSJson(clientId, pong);
+                return;
+            }
+
+            if (doc["action"].is<const char*>()) {
+                processWSCommand(clientId, doc);
+                return;
+            }
+
+            JsonDocument unsupported;
+            unsupported["type"] = "ack";
+            unsupported["status"] = "error";
+            unsupported["error"] = "missing action";
+            if (doc["seq"].is<uint32_t>()) unsupported["seq"] = doc["seq"].as<uint32_t>();
+            sendWSJson(clientId, unsupported);
+            break;
+        }
+        default:
+            break;
+    }
 }
 
 // ============================================================
@@ -1134,14 +1302,18 @@ void setup() {
     server.on("/display", HTTP_POST, handleDisplaySet);
     server.on("/display/clear", HTTP_POST, handleDisplayClear);
     server.begin();
+    wsServer.begin();
+    wsServer.onEvent(onWSEvent);
 
     Serial.println("HTTP server started on port " + String(HTTP_PORT));
+    Serial.println("WebSocket server started on port " + String(WS_PORT));
     displayMenu();
-    Serial.println("Ready for commands (WiFi + wired serial)");
+    Serial.println("Ready for commands (wired > websocket > http)");
 }
 
 void loop() {
     server.handleClient();
+    wsServer.loop();
     handleButtons();
     handleSerialInput();
     updateDisplayExpiry();

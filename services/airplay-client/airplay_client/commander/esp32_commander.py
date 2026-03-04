@@ -27,11 +27,14 @@ class ESP32Commander(Commander):
         forwarded_at = time.time()
         try:
             cmd = HIDCommand(action, **params)
-            await self._esp32.send_command(cmd)
+            result = await self._esp32.send_command(cmd)
+            ok = result.get("status", "ok") == "ok"
+            err = None if ok else (result.get("error") or result.get("reason") or str(result))
             return CommandResult(
-                success=True,
+                success=ok,
                 forwarded_at=forwarded_at,
                 completed_at=time.time(),
+                error=err,
             )
         except Exception as e:
             logger.error("ESP32 command failed (%s): %s", action, e)
