@@ -328,6 +328,7 @@ ChromaCatch-Go/
 - [x] GPS location verification (LocationMonitor: CLLocationManager polling + haversine drift + auto-recovery)
 - [x] DNS filter extension (NEPacketTunnelProvider sinkhole for Apple Wi-Fi/cell positioning domains)
 - [x] Isolated location-spoofer app package added at `services/ios-location-spoofer/` for easy cross-repo movement
+- [x] Location-spoofer WS settings hot-applied (URL/API key/client ID) with URL normalization before connect
 - [x] 265 tests passing (8 new location service tests, 7 removed from backend)
 - [ ] On-device testing: verify EA session activates dongle GPS forwarding (RP status `>`)
 - [ ] End-to-end: location service POST /location → iOS app WS → BLE NMEA → iPhone location change
