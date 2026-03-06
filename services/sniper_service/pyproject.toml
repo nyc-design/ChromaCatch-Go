@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "chromacatch-sniper"
+version = "0.1.0"
+description = "Discord sniper service for coordinate queueing + dispatch"
+authors = ["Neil Tapiavala <neil@tapiavala.com>"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.104.1"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
+pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+httpx = "^0.25.0"
+"discord.py-self" = "^2.0.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

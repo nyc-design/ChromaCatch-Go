@@ -1,0 +1,82 @@
+from fastapi.testclient import TestClient
+
+from sniper_service.main import app, service
+
+
+def setup_function() -> None:
+    service.replace_watch_blocks([])
+    service.clear_queue()
+
+
+def test_health_endpoint():
+    client = TestClient(app)
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["role"] == "sniper-service"
+
+
+def test_set_and_get_watch_blocks():
+    client = TestClient(app)
+
+    payload = {
+        "watch_blocks": [
+            {
+                "id": "block-a",
+                "server_id": "111",
+                "channel_id": "222",
+                "user_ids": ["333", "444"],
+                "geofence": {
+                    "latitude": 37.7749,
+                    "longitude": -122.4194,
+                    "radius_km": 5.0,
+                },
+                "enabled": True,
+            }
+        ]
+    }
+
+    put_response = client.put("/watch-blocks", json=payload)
+    assert put_response.status_code == 200
+
+    get_response = client.get("/watch-blocks")
+    assert get_response.status_code == 200
+    data = get_response.json()
+    assert len(data["watch_blocks"]) == 1
+    assert data["watch_blocks"][0]["id"] == "block-a"
+
+
+def test_queue_enqueue_and_dedupe():
+    client = TestClient(app)
+
+    first = client.post(
+        "/queue/enqueue",
+        json={"latitude": 37.1234567, "longitude": -122.1234567, "source": "manual"},
+    )
+    assert first.status_code == 200
+    assert first.json()["status"] == "queued"
+
+    duplicate = client.post(
+        "/queue/enqueue",
+        json={"latitude": 37.1234567, "longitude": -122.1234567, "source": "manual"},
+    )
+    assert duplicate.status_code == 200
+    assert duplicate.json()["status"] == "duplicate"
+
+    queue = client.get("/queue")
+    assert queue.status_code == 200
+    assert queue.json()["size"] == 1
+
+
+def test_dispatch_next_empty_queue_returns_404():
+    client = TestClient(app)
+    response = client.post("/queue/dispatch-next", json={})
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Queue is empty"
+
+
+def test_delete_watch_block_not_found():
+    client = TestClient(app)
+    response = client.delete("/watch-blocks/does-not-exist")
+    assert response.status_code == 404

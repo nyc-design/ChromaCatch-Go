@@ -29,6 +29,7 @@ Automated shiny hunting bot for Pokemon Go using AirPlay screen mirroring, compu
 - **iOS Controller App** (`services/ios-app/`): Native iPhone app — full drop-in replacement for the CLI airplay-client. Controls iTools BT GPS dongle (EA session + BLE NMEA), relays HID commands to ESP32 via HTTP, and broadcasts screen via ReplayKit (H.264 over WebSocket, same h264-ws protocol as CLI). Connects to both main backend (`/ws/control`) and location service (`/ws/location`).
 - **iOS Location Spoofer Package** (`services/ios-app/`): Isolated iOS app package focused on location spoofing controls (dongle pairing, coordinate updates, DNS location guard). Added as a portable package that can be moved between repos cleanly.
 - **Location Service** (`services/location_backend/`): Standalone FastAPI service on port 8001. Decouples GPS coordinate management from the video/HID pipeline. iOS apps connect via WebSocket to receive coordinates; orchestrator or manual `POST /location` pushes coordinates.
+- **Sniper Service** (`services/sniper_service/`): Standalone FastAPI service on port 8010. Monitors Discord messages (self-client), supports multiple server/channel/user watch blocks with optional geofence, queues extracted coordinates, and dispatches queued coordinates to location backend (`POST /location`) on demand.
 - **Remote Backend** (`services/backend/`): Runs in the cloud (Cloud Run, VM, etc.). Receives frames (via RTSP from MediaMTX or WebSocket), runs CV analysis, makes decisions, and sends HID commands back through WebSocket control channel.
 - **ESP32 Firmware** (`services/esp32/`): Multi-mode HID device with e-ink display menu. Supports BLE Mouse+Keyboard, BLE Gamepad, and USB HID (wired) output modes. Receives commands over WiFi HTTP or USB Serial. On-device button menu for mode selection. Mode discovery via `GET /mode` and remote configuration via `POST /mode`.
 - **Shared** (`services/shared/`): Protocol contract between services — message models, frame codec, constants.
@@ -204,6 +205,15 @@ ChromaCatch-Go/
 │   │   ├── session_manager.py               # Location-only client session tracking
 │   │   └── tests/
 │   │       └── test_location_api.py         # Location service tests (8 tests)
+│   ├── sniper_service/                      # REMOTE: Discord sniper queue + dispatch service (port 8010)
+│   │   ├── config.py                        # SniperSettings (CC_SNIPER_ prefix)
+│   │   ├── main.py                          # FastAPI + watch-block + queue + dispatch endpoints
+│   │   ├── monitor.py                       # Discord self-client runtime wrapper
+│   │   ├── service.py                       # Queue state + geofence + location dispatch logic
+│   │   ├── parser.py                        # Coordinate extraction from Discord content/embeds/components
+│   │   └── tests/
+│   │       ├── test_sniper_api.py
+│   │       └── test_parser.py
 │   ├── ios-app/                              # iOS: full client (dongle + screen broadcast + HID relay)
 │   │   └── ChromaCatchController/
 │   │       ├── ChromaCatchController.xcodeproj
@@ -329,6 +339,7 @@ ChromaCatch-Go/
 - [x] DNS filter extension (NEPacketTunnelProvider sinkhole for Apple Wi-Fi/cell positioning domains)
 - [x] Isolated location-spoofer app package added at `services/ios-app/` for easy cross-repo movement
 - [x] Location-spoofer WS settings hot-applied (URL/API key/client ID) with URL normalization before connect
+- [x] Sniper service scaffold (`services/sniper_service/`) with multi-watch blocks + optional geofence + queue dispatch endpoint
 - [x] 265 tests passing (8 new location service tests, 7 removed from backend)
 - [ ] On-device testing: verify EA session activates dongle GPS forwarding (RP status `>`)
 - [ ] End-to-end: location service POST /location → iOS app WS → BLE NMEA → iPhone location change
@@ -382,6 +393,7 @@ poetry run pytest
 poetry run pytest services/backend/tests/              # Backend + shared + integration
 poetry run pytest services/airplay-client/tests/        # Client component tests
 poetry run pytest services/location_backend/tests/      # Location service tests
+poetry run pytest services/sniper_service/tests/        # Sniper service tests
 poetry run pytest services/backend/tests/integration/   # End-to-end round-trip only
 
 # Start backend (cloud/remote)
@@ -517,3 +529,17 @@ CC_BACKEND_RTP_FEC_CLIENT_ID=rtp-fec       # client_id for session manager
 | POST | `/location` | Send GPS coordinates to connected iOS client(s) |
 | GET | `/location` | Get current spoofed location (per client or all) |
 | GET | `/health` | Health check (`role: location-service`) |
+
+## Sniper Service API (port 8010)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check (`role: sniper-service`) |
+| GET | `/watch-blocks` | List active Discord watch blocks |
+| PUT | `/watch-blocks` | Replace all watch blocks (supports multiple server/channel/user groups) |
+| POST | `/watch-blocks` | Add one watch block |
+| DELETE | `/watch-blocks/{id}` | Remove one watch block |
+| GET | `/queue` | Get queued coordinates |
+| POST | `/queue/enqueue` | Manually enqueue one coordinate |
+| POST | `/queue/clear` | Clear queue |
+| POST | `/queue/dispatch-next` | Dispatch next queued coordinate to location backend |

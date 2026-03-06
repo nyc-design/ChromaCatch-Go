@@ -50,4 +50,4 @@ warn_unused_configs = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["services/location_backend/tests"]
+testpaths = ["services/location_backend/tests", "services/sniper_service/tests"]
