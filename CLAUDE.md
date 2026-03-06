@@ -27,6 +27,7 @@ Automated shiny hunting bot for Pokemon Go using AirPlay screen mirroring, compu
 ### Service Architecture
 - **Airplay Client** (`services/airplay-client/`): Runs near the source device. Manages video capture (AirPlay, SysDVR, NTR, screen capture), delivers media to the backend (via WebRTC, SRT, or WebSocket), and routes commands from the backend to the target device via pluggable Commander interface (ESP32, sys-botbase, Luma3DS, virtual gamepad). Deployed as a CLI tool.
 - **iOS Controller App** (`services/ios-app/`): Native iPhone app — full drop-in replacement for the CLI airplay-client. Controls iTools BT GPS dongle (EA session + BLE NMEA), relays HID commands to ESP32 via HTTP, and broadcasts screen via ReplayKit (H.264 over WebSocket, same h264-ws protocol as CLI). Connects to both main backend (`/ws/control`) and location service (`/ws/location`).
+- **iOS Location Spoofer Package** (`services/ios-location-spoofer/`): Isolated iOS app package focused on location spoofing controls (dongle pairing, coordinate updates, DNS location guard). Added as a portable package that can be moved between repos cleanly.
 - **Location Service** (`services/location_service/`): Standalone FastAPI service on port 8001. Decouples GPS coordinate management from the video/HID pipeline. iOS apps connect via WebSocket to receive coordinates; orchestrator or manual `POST /location` pushes coordinates.
 - **Remote Backend** (`services/backend/`): Runs in the cloud (Cloud Run, VM, etc.). Receives frames (via RTSP from MediaMTX or WebSocket), runs CV analysis, makes decisions, and sends HID commands back through WebSocket control channel.
 - **ESP32 Firmware** (`services/esp32/`): Multi-mode HID device with e-ink display menu. Supports BLE Mouse+Keyboard, BLE Gamepad, and USB HID (wired) output modes. Receives commands over WiFi HTTP or USB Serial. On-device button menu for mode selection. Mode discovery via `GET /mode` and remote configuration via `POST /mode`.
@@ -234,6 +235,12 @@ ChromaCatch-Go/
 │   │       │   └── ChromaCatchBroadcast.entitlements  # App Group (group.com.chromacatch)
 │   │       └── ChromaCatchDNS/                    # NEPacketTunnelProvider DNS Filter Extension
 │   │           ├── PacketTunnelProvider.swift      # DNS sinkhole for Apple location domains
+│   ├── ios-location-spoofer/                     # iOS: dedicated location spoof app package
+│   │   ├── README.md
+│   │   └── ChromaCatchLocationControl/
+│   │       ├── ChromaCatchLocationControl.xcodeproj
+│   │       ├── ChromaCatchLocationControl/       # spoof-focused SwiftUI app target
+│   │       └── ChromaCatchDNS/                   # DNS location guard extension
 │   │           ├── Info.plist                     # Extension config (packet-tunnel)
 │   │           └── ChromaCatchDNS.entitlements    # packet-tunnel-provider + App Group
 │   └── esp32/                               # ESP32 firmware (v2: multi-mode HID)
@@ -320,6 +327,7 @@ ChromaCatch-Go/
 - [x] App Group IPC (shared UserDefaults between main app and broadcast extension)
 - [x] GPS location verification (LocationMonitor: CLLocationManager polling + haversine drift + auto-recovery)
 - [x] DNS filter extension (NEPacketTunnelProvider sinkhole for Apple Wi-Fi/cell positioning domains)
+- [x] Isolated location-spoofer app package added at `services/ios-location-spoofer/` for easy cross-repo movement
 - [x] 265 tests passing (8 new location service tests, 7 removed from backend)
 - [ ] On-device testing: verify EA session activates dongle GPS forwarding (RP status `>`)
 - [ ] End-to-end: location service POST /location → iOS app WS → BLE NMEA → iPhone location change
