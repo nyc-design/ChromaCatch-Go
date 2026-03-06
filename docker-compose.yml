@@ -1,5 +1,5 @@
 services:
-  location-service:
+  location-backend:
     build:
       context: ./services/location_backend
       dockerfile: Dockerfile
