@@ -49,6 +49,7 @@ class SniperService:
         self._queue: list[CoordinateQueueItem] = []
         self._watch_blocks_path = Path(settings.watch_blocks_path)
         self._active_client_id: str | None = settings.location_client_id
+        self._reveal_attempted_message_ids: set[str] = set()
 
     # --------- Watch blocks ---------
 
@@ -229,6 +230,40 @@ class SniperService:
 
     # --------- Discord ingestion ---------
 
+    async def _maybe_click_reveal_button(self, message: object) -> bool:
+        message_id = str(getattr(message, "id", "") or "")
+        if message_id and message_id in self._reveal_attempted_message_ids:
+            return False
+
+        for row in list(getattr(message, "components", []) or []):
+            children = list(getattr(row, "children", []) or getattr(row, "components", []) or [])
+            for comp in children:
+                label = str(getattr(comp, "label", "") or "").lower()
+                if "reveal" not in label:
+                    continue
+                if bool(getattr(comp, "disabled", False)):
+                    continue
+                click = getattr(comp, "click", None)
+                if not callable(click):
+                    continue
+                try:
+                    await click()
+                    if message_id:
+                        self._reveal_attempted_message_ids.add(message_id)
+                    logger.info("Clicked reveal button for message=%s", message_id or "<unknown>")
+                    return True
+                except Exception as exc:
+                    if message_id:
+                        self._reveal_attempted_message_ids.add(message_id)
+                    logger.warning(
+                        "Failed clicking reveal button for message=%s: %s",
+                        message_id or "<unknown>",
+                        exc,
+                    )
+                    return False
+
+        return False
+
     async def handle_discord_message(self, message: object) -> None:
         """Parse/queue coords from a discord.py(-self) message object."""
         guild = getattr(message, "guild", None)
@@ -266,7 +301,7 @@ class SniperService:
         components = []
         for row in list(getattr(message, "components", []) or []):
             row_data = {"components": []}
-            for comp in list(getattr(row, "children", []) or []):
+            for comp in list(getattr(row, "children", []) or getattr(row, "components", []) or []):
                 row_data["components"].append(
                     {
                         "label": getattr(comp, "label", None),
@@ -279,6 +314,7 @@ class SniperService:
         flattened = flatten_discord_message_parts(content, embeds, components)
         coords = extract_coordinate(flattened)
         if coords is None:
+            await self._maybe_click_reveal_button(message)
             return
 
         lat, lon = coords

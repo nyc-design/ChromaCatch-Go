@@ -78,7 +78,27 @@ class DiscordMonitor:
 
         @client.event
         async def on_message(message):  # type: ignore[no-redef]
-            await self._on_message(message)
+            try:
+                await self._on_message(message)
+            except Exception:
+                logger.exception("Failed handling Discord message_create event")
+
+        @client.event
+        async def on_message_edit(_before, after):  # type: ignore[no-redef]
+            try:
+                await self._on_message(after)
+            except Exception:
+                logger.exception("Failed handling Discord message_edit event")
+
+        @client.event
+        async def on_raw_message_edit(payload):  # type: ignore[no-redef]
+            updated = getattr(payload, "message", None)
+            if updated is None:
+                return
+            try:
+                await self._on_message(updated)
+            except Exception:
+                logger.exception("Failed handling Discord raw_message_edit event")
 
         self._client = client
 
