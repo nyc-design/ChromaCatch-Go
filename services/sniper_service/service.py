@@ -386,32 +386,3 @@ class SniperService:
             source_message_id=str(getattr(message, "id", "")) or None,
             reference_time=getattr(message, "created_at", None),
         )
-
-    async def handle_discord_gateway_event(self, event_type: str, payload: dict) -> None:
-        if event_type not in {"MESSAGE_CREATE", "MESSAGE_UPDATE"}:
-            return
-
-        server_id = str(payload.get("guild_id") or "")
-        channel_id = str(payload.get("channel_id") or "")
-        user_id = str(((payload.get("author") or {}).get("id")) or "")
-
-        if not server_id or not channel_id or not user_id:
-            return
-
-        if not self._enabled_blocks_for_channel(server_id, channel_id):
-            return
-
-        flattened = flatten_discord_message_parts(
-            str(payload.get("content") or ""),
-            list(payload.get("embeds") or []),
-            list(payload.get("components") or []),
-        )
-
-        await self._queue_if_matching(
-            server_id=server_id,
-            channel_id=channel_id,
-            user_id=user_id,
-            flattened=flattened,
-            source=f"discord_gateway:{event_type.lower()}",
-            source_message_id=str(payload.get("id") or "") or None,
-        )
