@@ -20,7 +20,7 @@ A1000008 /* NMEAGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A
 		C1000001 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2000001 /* PacketTunnelProvider.swift */; };
 		C1000002 /* DNSFilterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2000004 /* DNSFilterManager.swift */; };
 		A100000C /* LocationKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000E /* LocationKeepAlive.swift */; };
-		C1000003 /* ChromaCatchDNS.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C3000001 /* ChromaCatchDNS.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C1000003 /* ChromaCatchDNS.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C3000001 /* ChromaCatchDNS.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		D1000002 /* CardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000002 /* CardView.swift */; };
 		D1000003 /* DongleScannerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000003 /* DongleScannerSheet.swift */; };
 		D1000004 /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000004 /* LogView.swift */; };
@@ -433,6 +433,7 @@ A1000008 /* NMEAGenerator.swift in Sources */,
 		CB000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = ChromaCatchDNS/ChromaCatchDNS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -458,6 +459,7 @@ A1000008 /* NMEAGenerator.swift in Sources */,
 		CB000002 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = ChromaCatchDNS/ChromaCatchDNS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
