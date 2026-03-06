@@ -50,4 +50,4 @@ warn_unused_configs = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["services/backend/tests", "services/airplay-client/tests", "services/location_service/tests"]
+testpaths = ["services/location_backend/tests"]

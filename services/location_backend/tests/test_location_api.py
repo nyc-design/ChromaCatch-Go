@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
-from location_service.main import app, session_manager, _current_locations
+from location_backend.main import app, session_manager, _current_locations
 
 
 class TestHealthEndpoint:

@@ -27,8 +27,8 @@ Automated shiny hunting bot for Pokemon Go using AirPlay screen mirroring, compu
 ### Service Architecture
 - **Airplay Client** (`services/airplay-client/`): Runs near the source device. Manages video capture (AirPlay, SysDVR, NTR, screen capture), delivers media to the backend (via WebRTC, SRT, or WebSocket), and routes commands from the backend to the target device via pluggable Commander interface (ESP32, sys-botbase, Luma3DS, virtual gamepad). Deployed as a CLI tool.
 - **iOS Controller App** (`services/ios-app/`): Native iPhone app — full drop-in replacement for the CLI airplay-client. Controls iTools BT GPS dongle (EA session + BLE NMEA), relays HID commands to ESP32 via HTTP, and broadcasts screen via ReplayKit (H.264 over WebSocket, same h264-ws protocol as CLI). Connects to both main backend (`/ws/control`) and location service (`/ws/location`).
-- **iOS Location Spoofer Package** (`services/ios-location-spoofer/`): Isolated iOS app package focused on location spoofing controls (dongle pairing, coordinate updates, DNS location guard). Added as a portable package that can be moved between repos cleanly.
-- **Location Service** (`services/location_service/`): Standalone FastAPI service on port 8001. Decouples GPS coordinate management from the video/HID pipeline. iOS apps connect via WebSocket to receive coordinates; orchestrator or manual `POST /location` pushes coordinates.
+- **iOS Location Spoofer Package** (`services/ios-app/`): Isolated iOS app package focused on location spoofing controls (dongle pairing, coordinate updates, DNS location guard). Added as a portable package that can be moved between repos cleanly.
+- **Location Service** (`services/location_backend/`): Standalone FastAPI service on port 8001. Decouples GPS coordinate management from the video/HID pipeline. iOS apps connect via WebSocket to receive coordinates; orchestrator or manual `POST /location` pushes coordinates.
 - **Remote Backend** (`services/backend/`): Runs in the cloud (Cloud Run, VM, etc.). Receives frames (via RTSP from MediaMTX or WebSocket), runs CV analysis, makes decisions, and sends HID commands back through WebSocket control channel.
 - **ESP32 Firmware** (`services/esp32/`): Multi-mode HID device with e-ink display menu. Supports BLE Mouse+Keyboard, BLE Gamepad, and USB HID (wired) output modes. Receives commands over WiFi HTTP or USB Serial. On-device button menu for mode selection. Mode discovery via `GET /mode` and remote configuration via `POST /mode`.
 - **Shared** (`services/shared/`): Protocol contract between services — message models, frame codec, constants.
@@ -198,7 +198,7 @@ ChromaCatch-Go/
 │   │       ├── test_transport.py            # SRT + WS transport + factory tests
 │   │       ├── test_ws_client.py
 │   │       └── test_cli.py
-│   ├── location_service/                    # REMOTE: GPS coordinate service (port 8001)
+│   ├── location_backend/                    # REMOTE: GPS coordinate service (port 8001)
 │   │   ├── config.py                        # LocationSettings (CC_LOCATION_ prefix)
 │   │   ├── main.py                          # FastAPI + WS /ws/location + POST/GET /location
 │   │   ├── session_manager.py               # Location-only client session tracking
@@ -235,7 +235,7 @@ ChromaCatch-Go/
 │   │       │   └── ChromaCatchBroadcast.entitlements  # App Group (group.com.chromacatch)
 │   │       └── ChromaCatchDNS/                    # NEPacketTunnelProvider DNS Filter Extension
 │   │           ├── PacketTunnelProvider.swift      # DNS sinkhole for Apple location domains
-│   ├── ios-location-spoofer/                     # iOS: dedicated location spoof app package
+│   ├── ios-app/                                   # iOS: dedicated location spoof app package
 │   │   ├── README.md
 │   │   └── ChromaCatchLocationControl/
 │   │       ├── ChromaCatchLocationControl.xcodeproj
@@ -317,7 +317,7 @@ ChromaCatch-Go/
 
 ### Phase 1.7: Location Spoofing + iOS Full Client [IN PROGRESS]
 - [x] iTools BT dongle protocol reverse-engineered (AT+CN/RP init, NMEA RMC+GGA over BLE FF03)
-- [x] Standalone location service (`services/location_service/`, port 8001) — decoupled from main backend
+- [x] Standalone location service (`services/location_backend/`, port 8001) — decoupled from main backend
 - [x] iOS app scaffold (SwiftUI, CoreBluetooth BLEManager, EA EAManager, WebSocket, NMEA generator)
 - [x] Dongle controller (AT+CN init → NMEA loop at 1Hz with RP status monitoring)
 - [x] iOS dual WebSocket (main backend `/ws/control` + location service `/ws/location`)
@@ -327,7 +327,7 @@ ChromaCatch-Go/
 - [x] App Group IPC (shared UserDefaults between main app and broadcast extension)
 - [x] GPS location verification (LocationMonitor: CLLocationManager polling + haversine drift + auto-recovery)
 - [x] DNS filter extension (NEPacketTunnelProvider sinkhole for Apple Wi-Fi/cell positioning domains)
-- [x] Isolated location-spoofer app package added at `services/ios-location-spoofer/` for easy cross-repo movement
+- [x] Isolated location-spoofer app package added at `services/ios-app/` for easy cross-repo movement
 - [x] Location-spoofer WS settings hot-applied (URL/API key/client ID) with URL normalization before connect
 - [x] 265 tests passing (8 new location service tests, 7 removed from backend)
 - [ ] On-device testing: verify EA session activates dongle GPS forwarding (RP status `>`)
@@ -381,7 +381,7 @@ poetry run pytest
 # Run by suite
 poetry run pytest services/backend/tests/              # Backend + shared + integration
 poetry run pytest services/airplay-client/tests/        # Client component tests
-poetry run pytest services/location_service/tests/      # Location service tests
+poetry run pytest services/location_backend/tests/      # Location service tests
 poetry run pytest services/backend/tests/integration/   # End-to-end round-trip only
 
 # Start backend (cloud/remote)
@@ -508,6 +508,8 @@ CC_BACKEND_RTP_FEC_CLIENT_ID=rtp-fec       # client_id for session manager
 | GET | `/dashboard` | Browser dashboard (WebRTC + MJPEG fallback) |
 
 ## Location Service API (port 8001)
+
+> Note: FastAPI OpenAPI/Swagger docs only include HTTP endpoints; the `/ws/location` WebSocket route is implemented but does not appear in `/docs`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|

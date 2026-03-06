@@ -1,7 +1,7 @@
 services:
   location-service:
     build:
-      context: ./services/location_service
+      context: ./services/location_backend
       dockerfile: Dockerfile
       additional_contexts:
         shared: ./services/shared

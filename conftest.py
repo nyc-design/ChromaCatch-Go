@@ -9,5 +9,5 @@ _root = Path(__file__).parent
 sys.path.insert(0, str(_root / "services"))
 # airplay_client package lives under services/airplay-client/
 sys.path.insert(0, str(_root / "services" / "airplay-client"))
-# location_service package lives under services/location_service/
-sys.path.insert(0, str(_root / "services" / "location_service"))
+# location_backend package lives under services/location_backend/
+sys.path.insert(0, str(_root / "services" / "location_backend"))

@@ -20,7 +20,7 @@ COPY --from=builder /build/.venv /app/.venv
 COPY --from=shared . /app/services/shared/
 
 # Location service application code (from primary build context)
-COPY . /app/services/location_service/
+COPY . /app/services/location_backend/
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/services"
@@ -34,4 +34,4 @@ EXPOSE 8001
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" || exit 1
 
-CMD ["python", "-m", "uvicorn", "location_service.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["python", "-m", "uvicorn", "location_backend.main:app", "--host", "0.0.0.0", "--port", "8001"]

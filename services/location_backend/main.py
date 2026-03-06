@@ -10,8 +10,8 @@ import logging
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from location_service.config import location_settings
-from location_service.session_manager import LocationSessionManager
+from location_backend.config import location_settings
+from location_backend.session_manager import LocationSessionManager
 from shared.constants import MessageType, setup_logging
 from shared.messages import LocationStatusMessage, LocationUpdateMessage, parse_message
 
