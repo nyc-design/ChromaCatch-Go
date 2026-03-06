@@ -50,8 +50,9 @@ final class SniperAPIClient {
         return response.watchBlocks
     }
 
-    func addWatchBlock(_ watchBlock: SniperWatchBlock) async throws -> SniperWatchBlock {
-        try await request(path: "/watch-blocks", method: "POST", body: watchBlock)
+    func addWatchBlock(_ watchBlock: SniperWatchBlock, clientId: String?) async throws -> SniperWatchBlock {
+        let queryItems = Self.clientIdQueryItems(clientId)
+        return try await request(path: "/watch-blocks", method: "POST", queryItems: queryItems, body: watchBlock)
     }
 
     func deleteWatchBlock(id: String) async throws {
@@ -70,16 +71,32 @@ final class SniperAPIClient {
         try await request(path: "/queue/dispatch-next", method: "POST", body: SniperDispatchRequest(clientId: nil, altitude: nil, speedKnots: nil, heading: nil))
     }
 
-    private func request<T: Decodable>(path: String, method: String) async throws -> T {
-        try await request(path: path, method: method, bodyData: nil)
+    private static func clientIdQueryItems(_ clientId: String?) -> [URLQueryItem] {
+        let trimmed = (clientId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        return [URLQueryItem(name: "client_id", value: trimmed)]
     }
 
-    private func request<T: Decodable, U: Encodable>(path: String, method: String, body: U?) async throws -> T {
+    private func request<T: Decodable>(path: String, method: String, queryItems: [URLQueryItem] = []) async throws -> T {
+        try await request(path: path, method: method, queryItems: queryItems, bodyData: nil)
+    }
+
+    private func request<T: Decodable, U: Encodable>(
+        path: String,
+        method: String,
+        queryItems: [URLQueryItem] = [],
+        body: U?
+    ) async throws -> T {
         let bodyData = try body.map { try encoder.encode($0) }
-        return try await request(path: path, method: method, bodyData: bodyData)
+        return try await request(path: path, method: method, queryItems: queryItems, bodyData: bodyData)
     }
 
-    private func request<T: Decodable>(path: String, method: String, bodyData: Data?) async throws -> T {
+    private func request<T: Decodable>(
+        path: String,
+        method: String,
+        queryItems: [URLQueryItem],
+        bodyData: Data?
+    ) async throws -> T {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             throw SniperAPIError.invalidURL
         }
@@ -87,6 +104,9 @@ final class SniperAPIClient {
         let normalizedPath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let suffixPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
         components.path = "/" + [normalizedPath, suffixPath].filter { !$0.isEmpty }.joined(separator: "/")
+        if !queryItems.isEmpty {
+            components.queryItems = queryItems
+        }
 
         guard let requestURL = components.url else {
             throw SniperAPIError.invalidURL

@@ -55,6 +55,7 @@ async def health() -> dict:
         "status": "ok",
         "role": "sniper-service",
         "queue_size": service.queue_size,
+        "active_client_id": service.active_client_id,
         "discord_monitor_enabled": monitor.enabled,
         "discord_monitor_connected": monitor.connected,
     }
@@ -66,14 +67,14 @@ async def get_watch_blocks() -> dict:
 
 
 @app.put("/watch-blocks")
-async def replace_watch_blocks(req: SetWatchBlocksRequest) -> dict:
-    updated = service.replace_watch_blocks(req.watch_blocks)
+async def replace_watch_blocks(req: SetWatchBlocksRequest, client_id: str | None = None) -> dict:
+    updated = service.replace_watch_blocks(req.watch_blocks, client_id=client_id)
     return {"watch_blocks": [block.model_dump() for block in updated]}
 
 
 @app.post("/watch-blocks", response_model=WatchBlock)
-async def add_watch_block(block: WatchBlock) -> WatchBlock:
-    return service.add_watch_block(block)
+async def add_watch_block(block: WatchBlock, client_id: str | None = None) -> WatchBlock:
+    return service.add_watch_block(block, client_id=client_id)
 
 
 @app.delete("/watch-blocks/{block_id}")

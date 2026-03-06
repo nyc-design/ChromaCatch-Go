@@ -29,7 +29,7 @@ Automated shiny hunting bot for Pokemon Go using AirPlay screen mirroring, compu
 - **iOS Controller App** (`services/ios-app/`): Native iPhone app — full drop-in replacement for the CLI airplay-client. Controls iTools BT GPS dongle (EA session + BLE NMEA), relays HID commands to ESP32 via HTTP, and broadcasts screen via ReplayKit (H.264 over WebSocket, same h264-ws protocol as CLI). Connects to both main backend (`/ws/control`) and location service (`/ws/location`).
 - **iOS Location Spoofer Package** (`services/ios-app/`): Isolated iOS app package focused on location spoofing controls (dongle pairing, coordinate updates, DNS location guard) plus Sniper tab for watch-block management and queued coordinate dispatch.
 - **Location Service** (`services/location_backend/`): Standalone FastAPI service on port 8001. Decouples GPS coordinate management from the video/HID pipeline. iOS apps connect via WebSocket to receive coordinates; orchestrator or manual `POST /location` pushes coordinates.
-- **Sniper Service** (`services/sniper_service/`): Standalone FastAPI service on port 8010. Monitors Discord messages (self-client), supports multiple server/channel/user watch blocks with optional geofence, queues extracted coordinates, prunes expired coordinates via despawn timers, and dispatches queued coordinates to location backend (`POST /location`) newest-first (LIFO) on demand.
+- **Sniper Service** (`services/sniper_service/`): Standalone FastAPI service on port 8010. Monitors Discord messages (self-client), supports multiple server/channel/user watch blocks with optional geofence, queues extracted coordinates, prunes expired coordinates via despawn timers, and dispatches queued coordinates newest-first (LIFO) to location backend (`POST /location`) with client_id precedence: request value → active client from watch-block setup → env default.
 - **Remote Backend** (`services/backend/`): Runs in the cloud (Cloud Run, VM, etc.). Receives frames (via RTSP from MediaMTX or WebSocket), runs CV analysis, makes decisions, and sends HID commands back through WebSocket control channel.
 - **ESP32 Firmware** (`services/esp32/`): Multi-mode HID device with e-ink display menu. Supports BLE Mouse+Keyboard, BLE Gamepad, and USB HID (wired) output modes. Receives commands over WiFi HTTP or USB Serial. On-device button menu for mode selection. Mode discovery via `GET /mode` and remote configuration via `POST /mode`.
 - **Shared** (`services/shared/`): Protocol contract between services — message models, frame codec, constants.
@@ -536,10 +536,10 @@ CC_BACKEND_RTP_FEC_CLIENT_ID=rtp-fec       # client_id for session manager
 |--------|----------|-------------|
 | GET | `/health` | Health check (`role: sniper-service`) |
 | GET | `/watch-blocks` | List active Discord watch blocks |
-| PUT | `/watch-blocks` | Replace all watch blocks (supports multiple server/channel/user groups) |
-| POST | `/watch-blocks` | Add one watch block |
+| PUT | `/watch-blocks` | Replace all watch blocks (supports multiple server/channel/user groups; optional `client_id` query to set active dispatch client) |
+| POST | `/watch-blocks` | Add one watch block (optional `client_id` query to set active dispatch client) |
 | DELETE | `/watch-blocks/{id}` | Remove one watch block |
 | GET | `/queue` | Get queued coordinates |
 | POST | `/queue/enqueue` | Manually enqueue one coordinate |
 | POST | `/queue/clear` | Clear queue |
-| POST | `/queue/dispatch-next` | Dispatch newest queued coordinate to location backend (LIFO, expired entries pruned first) |
+| POST | `/queue/dispatch-next` | Dispatch newest queued coordinate (LIFO, expired entries pruned first; client_id source: request → active watch-block client → env default) |

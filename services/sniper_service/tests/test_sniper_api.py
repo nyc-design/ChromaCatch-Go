@@ -116,6 +116,53 @@ def test_dispatch_next_uses_lifo_newest_first():
     assert sent["longitude"] == 4.0
 
 
+def test_watch_block_setup_sets_active_client_id_for_dispatch():
+    client = TestClient(app)
+
+    block_payload = {
+        "id": "block-client",
+        "server_id": "111",
+        "channel_id": "222",
+        "user_ids": ["333"],
+        "enabled": True,
+    }
+    put_response = client.post("/watch-blocks?client_id=ios-client-alpha", json=block_payload)
+    assert put_response.status_code == 200
+
+    client.post("/queue/enqueue", json={"latitude": 7.0, "longitude": 8.0, "source": "manual"})
+    captured_payload = {}
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"status":"sent"}'
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"status": "sent"}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *args, **kwargs):
+            captured_payload["json"] = kwargs.get("json", {})
+            return FakeResponse()
+
+    with patch("sniper_service.service.httpx.AsyncClient", FakeAsyncClient):
+        dispatch_response = client.post("/queue/dispatch-next", json={})
+
+    assert dispatch_response.status_code == 200
+    assert captured_payload["json"]["client_id"] == "ios-client-alpha"
+
+
 def test_expired_queue_items_are_pruned_before_dispatch():
     client = TestClient(app)
     service.enqueue_coordinate(

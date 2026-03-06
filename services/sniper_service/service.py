@@ -48,6 +48,7 @@ class SniperService:
         self._watch_blocks: list[WatchBlock] = []
         self._queue: list[CoordinateQueueItem] = []
         self._watch_blocks_path = Path(settings.watch_blocks_path)
+        self._active_client_id: str | None = settings.location_client_id
 
     # --------- Watch blocks ---------
 
@@ -67,12 +68,27 @@ class SniperService:
     def get_watch_blocks(self) -> list[WatchBlock]:
         return list(self._watch_blocks)
 
-    def replace_watch_blocks(self, watch_blocks: list[WatchBlock]) -> list[WatchBlock]:
+    def set_active_client_id(self, client_id: str | None) -> None:
+        normalized = (client_id or "").strip()
+        if normalized:
+            self._active_client_id = normalized
+
+    @property
+    def active_client_id(self) -> str | None:
+        return self._active_client_id
+
+    def replace_watch_blocks(
+        self,
+        watch_blocks: list[WatchBlock],
+        client_id: str | None = None,
+    ) -> list[WatchBlock]:
+        self.set_active_client_id(client_id)
         self._watch_blocks = list(watch_blocks)
         self.save_watch_blocks()
         return self.get_watch_blocks()
 
-    def add_watch_block(self, watch_block: WatchBlock) -> WatchBlock:
+    def add_watch_block(self, watch_block: WatchBlock, client_id: str | None = None) -> WatchBlock:
+        self.set_active_client_id(client_id)
         self._watch_blocks.append(watch_block)
         self.save_watch_blocks()
         return watch_block
@@ -175,7 +191,7 @@ class SniperService:
         item = self._queue[index]
 
         payload = {
-            "client_id": req.client_id or self.settings.location_client_id,
+            "client_id": req.client_id or self._active_client_id or self.settings.location_client_id,
             "latitude": item.latitude,
             "longitude": item.longitude,
             "altitude": req.altitude if req.altitude is not None else self.settings.location_altitude,

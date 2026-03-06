@@ -412,7 +412,7 @@ class AppCoordinator: ObservableObject {
             sniperIsLoading = true
             defer { sniperIsLoading = false }
             do {
-                _ = try await sniperAPIClient.addWatchBlock(watchBlock)
+                _ = try await sniperAPIClient.addWatchBlock(watchBlock, clientId: clientId)
                 sniperLastActionMessage = "Watch block added"
                 await refreshSniperDataAsync()
             } catch {

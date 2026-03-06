@@ -23,10 +23,10 @@ Discord coordinate monitor + queue dispatcher for ChromaCatch.
 ## API
 - `GET /health`
 - `GET /watch-blocks`
-- `PUT /watch-blocks` (replace all)
-- `POST /watch-blocks` (append one)
+- `PUT /watch-blocks` (replace all; optional `client_id` query param to set active dispatch client)
+- `POST /watch-blocks` (append one; optional `client_id` query param to set active dispatch client)
 - `DELETE /watch-blocks/{id}`
 - `GET /queue`
 - `POST /queue/enqueue` (manual enqueue)
 - `POST /queue/clear`
-- `POST /queue/dispatch-next`
+- `POST /queue/dispatch-next` (uses request `client_id`, else active client from watch-block setup, else env default)
