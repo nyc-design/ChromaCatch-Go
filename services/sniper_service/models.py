@@ -81,6 +81,7 @@ class QueueStateResponse(BaseModel):
 class DispatchResponse(BaseModel):
     success: bool
     sent: CoordinateQueueItem | None = None
+    location_request: dict | None = None
     location_response: dict | list | str | None = None
     queue: QueueStateResponse
     message: str | None = None

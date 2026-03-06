@@ -214,6 +214,7 @@ class SniperService:
                 success=False,
                 message=str(exc),
                 sent=item,
+                location_request=payload,
                 queue=self.queue_state(),
             )
 
@@ -221,6 +222,7 @@ class SniperService:
         return DispatchResponse(
             success=True,
             sent=item,
+            location_request=payload,
             location_response=body,
             queue=self.queue_state(),
         )

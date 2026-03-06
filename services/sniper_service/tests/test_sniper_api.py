@@ -83,6 +83,7 @@ def test_dispatch_next_uses_lifo_newest_first():
     client = TestClient(app)
     client.post("/queue/enqueue", json={"latitude": 1.0, "longitude": 2.0, "source": "manual"})
     client.post("/queue/enqueue", json={"latitude": 3.0, "longitude": 4.0, "source": "manual"})
+    captured_payload = {}
 
     class FakeResponse:
         status_code = 200
@@ -105,15 +106,18 @@ def test_dispatch_next_uses_lifo_newest_first():
             return False
 
         async def post(self, *args, **kwargs):
+            captured_payload["json"] = kwargs.get("json", {})
             return FakeResponse()
 
     with patch("sniper_service.service.httpx.AsyncClient", FakeAsyncClient):
         response = client.post("/queue/dispatch-next", json={})
 
     assert response.status_code == 200
-    sent = response.json()["sent"]
+    data = response.json()
+    sent = data["sent"]
     assert sent["latitude"] == 3.0
     assert sent["longitude"] == 4.0
+    assert data["location_request"] == captured_payload["json"]
 
 
 def test_watch_block_setup_sets_active_client_id_for_dispatch():
@@ -161,6 +165,7 @@ def test_watch_block_setup_sets_active_client_id_for_dispatch():
 
     assert dispatch_response.status_code == 200
     assert captured_payload["json"]["client_id"] == "ios-client-alpha"
+    assert dispatch_response.json()["location_request"]["client_id"] == "ios-client-alpha"
 
 
 def test_expired_queue_items_are_pruned_before_dispatch():

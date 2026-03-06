@@ -542,4 +542,4 @@ CC_BACKEND_RTP_FEC_CLIENT_ID=rtp-fec       # client_id for session manager
 | GET | `/queue` | Get queued coordinates |
 | POST | `/queue/enqueue` | Manually enqueue one coordinate |
 | POST | `/queue/clear` | Clear queue |
-| POST | `/queue/dispatch-next` | Dispatch newest queued coordinate (LIFO, expired entries pruned first; client_id source: request → active watch-block client → env default) |
+| POST | `/queue/dispatch-next` | Dispatch newest queued coordinate (LIFO, expired entries pruned first; client_id source: request → active watch-block client → env default; response includes exact posted `location_request`) |

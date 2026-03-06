@@ -9,6 +9,7 @@ Discord coordinate monitor + queue dispatcher for ChromaCatch.
 - Queue uses LIFO dispatch semantics (newest coordinate sent first)
 - Queue prunes expired entries using parsed despawn timers from Discord message text
 - Dispatch next queued coordinate to location backend via `POST /location`
+  - Dispatch response includes both `location_request` (exact posted payload) and `location_response`
 
 ## Environment (`CC_SNIPER_`)
 - `CC_SNIPER_DISCORD_TOKEN` - Discord user token for self-client monitoring
