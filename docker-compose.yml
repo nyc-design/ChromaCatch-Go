@@ -1,30 +1,4 @@
 services:
-  backend:
-    build:
-      context: ./services/backend
-      dockerfile: Dockerfile
-      additional_contexts:
-        shared: ./services/shared
-    container_name: chromacatch-backend
-    restart: unless-stopped
-    # Share the workspace container's network so ports are reachable via
-    # Coder's port-forwarding proxy (DinD: bridge ports land on Docker host,
-    # not our workspace).
-    network_mode: "container:${CODER_CONTAINER_NAME:-coder-nyc-design-chromacatch-go-agents}"
-    environment:
-      - CC_BACKEND_API_KEY=${CC_BACKEND_API_KEY:-}
-      - CC_BACKEND_MEDIAMTX_ENABLED=true
-      - CC_BACKEND_MEDIAMTX_BINARY=mediamtx
-      - CC_BACKEND_RTSP_CONSUMER_ENABLED=true
-      - CC_BACKEND_MEDIAMTX_SRT_PORT=8890
-      - CC_BACKEND_MEDIAMTX_RTSP_PORT=8554
-      - CC_BACKEND_MEDIAMTX_WEBRTC_PORT=8889
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-
   location-service:
     build:
       context: ./services/location_service
@@ -33,7 +7,8 @@ services:
         shared: ./services/shared
     container_name: chromacatch-location
     restart: unless-stopped
-    network_mode: "container:${CODER_CONTAINER_NAME:-coder-nyc-design-chromacatch-go-agents}"
+    ports:
+      - "8001:8001"
     environment:
       - CC_LOCATION_API_KEY=${CC_LOCATION_API_KEY:-}
     healthcheck:
