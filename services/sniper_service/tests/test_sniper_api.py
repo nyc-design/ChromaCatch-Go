@@ -1,3 +1,6 @@
+import time
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
 from sniper_service.main import app, service
@@ -71,6 +74,57 @@ def test_queue_enqueue_and_dedupe():
 
 def test_dispatch_next_empty_queue_returns_404():
     client = TestClient(app)
+    response = client.post("/queue/dispatch-next", json={})
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Queue is empty"
+
+
+def test_dispatch_next_uses_lifo_newest_first():
+    client = TestClient(app)
+    client.post("/queue/enqueue", json={"latitude": 1.0, "longitude": 2.0, "source": "manual"})
+    client.post("/queue/enqueue", json={"latitude": 3.0, "longitude": 4.0, "source": "manual"})
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"status":"sent"}'
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"status": "sent"}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    with patch("sniper_service.service.httpx.AsyncClient", FakeAsyncClient):
+        response = client.post("/queue/dispatch-next", json={})
+
+    assert response.status_code == 200
+    sent = response.json()["sent"]
+    assert sent["latitude"] == 3.0
+    assert sent["longitude"] == 4.0
+
+
+def test_expired_queue_items_are_pruned_before_dispatch():
+    client = TestClient(app)
+    service.enqueue_coordinate(
+        latitude=10.0,
+        longitude=10.0,
+        source="test",
+        despawn_epoch=time.time() - 10,
+    )
+
     response = client.post("/queue/dispatch-next", json={})
     assert response.status_code == 404
     assert response.json()["detail"] == "Queue is empty"

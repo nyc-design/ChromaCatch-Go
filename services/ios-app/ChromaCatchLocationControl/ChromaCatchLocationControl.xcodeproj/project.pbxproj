@@ -26,6 +26,9 @@ A1000008 /* NMEAGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A
 		D1000004 /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000004 /* LogView.swift */; };
 		D1000008 /* SpoofTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000008 /* SpoofTab.swift */; };
 		D1000009 /* SettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000009 /* SettingsTab.swift */; };
+		E1000001 /* SniperAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000001 /* SniperAPIClient.swift */; };
+		E1000002 /* SniperModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000002 /* SniperModels.swift */; };
+		E1000003 /* SniperTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000003 /* SniperTab.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -77,6 +80,9 @@ A2000008 /* NMEAGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType 
 		D2000004 /* LogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogView.swift; sourceTree = "<group>"; };
 		D2000008 /* SpoofTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpoofTab.swift; sourceTree = "<group>"; };
 		D2000009 /* SettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTab.swift; sourceTree = "<group>"; };
+		E2000001 /* SniperAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SniperAPIClient.swift; sourceTree = "<group>"; };
+		E2000002 /* SniperModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SniperModels.swift; sourceTree = "<group>"; };
+		E2000003 /* SniperTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SniperTab.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -131,6 +137,7 @@ A2000008 /* NMEAGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType 
 				A2000007 /* LocationMonitor.swift */,
 				A200000E /* LocationKeepAlive.swift */,
 				C2000004 /* DNSFilterManager.swift */,
+				E2000001 /* SniperAPIClient.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -148,6 +155,7 @@ A2000008 /* NMEAGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType 
 			isa = PBXGroup;
 			children = (
 				A200000A /* Messages.swift */,
+				E2000002 /* SniperModels.swift */,
 			);
 			path = Protocol;
 			sourceTree = "<group>";
@@ -185,6 +193,7 @@ A2000008 /* NMEAGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType 
 			isa = PBXGroup;
 			children = (
 				D2000008 /* SpoofTab.swift */,
+				E2000003 /* SniperTab.swift */,
 				D2000009 /* SettingsTab.swift */,
 			);
 			path = Tabs;
@@ -294,7 +303,10 @@ A1000008 /* NMEAGenerator.swift in Sources */,
 				D1000003 /* DongleScannerSheet.swift in Sources */,
 				D1000004 /* LogView.swift in Sources */,
 				D1000008 /* SpoofTab.swift in Sources */,
+				E1000003 /* SniperTab.swift in Sources */,
 				D1000009 /* SettingsTab.swift in Sources */,
+				E1000001 /* SniperAPIClient.swift in Sources */,
+				E1000002 /* SniperModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

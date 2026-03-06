@@ -56,7 +56,6 @@ class QueueDispatchRequest(BaseModel):
     altitude: float | None = None
     speed_knots: float | None = None
     heading: float | None = None
-    strategy: str = Field(default="newest", pattern="^(newest|oldest)$")
 
 
 class CoordinateQueueItem(BaseModel):
@@ -70,6 +69,7 @@ class CoordinateQueueItem(BaseModel):
     matched_user_id: str | None = None
     queued_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     source_message_id: str | None = None
+    despawn_epoch: float | None = None
 
 
 class QueueStateResponse(BaseModel):

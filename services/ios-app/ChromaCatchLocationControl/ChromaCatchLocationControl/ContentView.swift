@@ -10,6 +10,11 @@ struct ContentView: View {
                     Label("Spoof", systemImage: "location.fill")
                 }
 
+            SniperTab()
+                .tabItem {
+                    Label("Sniper", systemImage: "scope")
+                }
+
             SettingsTab()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape.fill")

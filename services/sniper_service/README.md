@@ -6,6 +6,8 @@ Discord coordinate monitor + queue dispatcher for ChromaCatch.
 - Watch multiple `(server_id, channel_id, user_ids[])` blocks
 - Optionally enforce geofence per block
 - Queue coordinates from Discord messages
+- Queue uses LIFO dispatch semantics (newest coordinate sent first)
+- Queue prunes expired entries using parsed despawn timers from Discord message text
 - Dispatch next queued coordinate to location backend via `POST /location`
 
 ## Environment (`CC_SNIPER_`)

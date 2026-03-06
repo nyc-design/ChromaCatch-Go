@@ -23,6 +23,17 @@ struct SettingsTab: View {
                         .disableAutocorrection(true)
                 }
 
+                Section("Sniper Service") {
+                    TextField("Sniper API URL", text: $coordinator.sniperServiceURL)
+                        .font(.system(.caption, design: .monospaced))
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+
+                    Text("Example: https://8010--main--chromacatch-go-agents--nyc-design.apps.coder.tapiavala.com")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
                 Section {
                     NavigationLink {
                         LogView()

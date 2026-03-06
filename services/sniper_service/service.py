@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import time
 from pathlib import Path
 
 import httpx
@@ -18,7 +19,11 @@ from sniper_service.models import (
     QueueStateResponse,
     WatchBlock,
 )
-from sniper_service.parser import extract_coordinate, flatten_discord_message_parts
+from sniper_service.parser import (
+    extract_coordinate,
+    flatten_discord_message_parts,
+    parse_despawn_epoch,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +92,7 @@ class SniperService:
         return len(self._queue)
 
     def queue_state(self) -> QueueStateResponse:
+        self.prune_expired_queue()
         return QueueStateResponse(
             size=len(self._queue),
             max_size=self.settings.queue_max,
@@ -100,17 +106,31 @@ class SniperService:
     def _dedupe_key(self, lat: float, lon: float) -> str:
         return f"{lat:.6f},{lon:.6f}"
 
+    def prune_expired_queue(self, now_epoch: float | None = None) -> int:
+        now = now_epoch or time.time()
+        kept: list[CoordinateQueueItem] = []
+        removed = 0
+        for item in self._queue:
+            if item.despawn_epoch is not None and item.despawn_epoch <= now:
+                removed += 1
+                continue
+            kept.append(item)
+        self._queue = kept
+        return removed
+
     def enqueue_coordinate(
         self,
         latitude: float,
         longitude: float,
         source: str,
+        despawn_epoch: float | None = None,
         matched_block_id: str | None = None,
         matched_server_id: str | None = None,
         matched_channel_id: str | None = None,
         matched_user_id: str | None = None,
         source_message_id: str | None = None,
     ) -> CoordinateQueueItem | None:
+        self.prune_expired_queue()
         key = self._dedupe_key(latitude, longitude)
         for item in self._queue:
             if self._dedupe_key(item.latitude, item.longitude) == key:
@@ -125,6 +145,7 @@ class SniperService:
             matched_channel_id=matched_channel_id,
             matched_user_id=matched_user_id,
             source_message_id=source_message_id,
+            despawn_epoch=despawn_epoch,
         )
         self._queue.append(queued_item)
 
@@ -141,6 +162,7 @@ class SniperService:
         )
 
     async def dispatch_next(self, req: QueueDispatchRequest) -> DispatchResponse:
+        self.prune_expired_queue()
         if not self._queue:
             return DispatchResponse(
                 success=False,
@@ -148,7 +170,8 @@ class SniperService:
                 queue=self.queue_state(),
             )
 
-        index = -1 if req.strategy == "newest" else 0
+        # LIFO by design: newest coordinate is dispatched first.
+        index = -1
         item = self._queue[index]
 
         payload = {
@@ -241,6 +264,10 @@ class SniperService:
             return
 
         lat, lon = coords
+        despawn_epoch = parse_despawn_epoch(
+            flattened,
+            reference_time=getattr(message, "created_at", None),
+        )
 
         geofence = matching_block.geofence
         if geofence is not None:
@@ -252,6 +279,7 @@ class SniperService:
             latitude=lat,
             longitude=lon,
             source="discord",
+            despawn_epoch=despawn_epoch,
             matched_block_id=matching_block.id,
             matched_server_id=server_id,
             matched_channel_id=channel_id,
