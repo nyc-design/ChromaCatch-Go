@@ -43,12 +43,33 @@ class DiscordMonitor:
             logger.error("Failed importing discord client library: %s", exc)
             return
 
-        intents = discord.Intents.default()
-        intents.message_content = True
-        intents.messages = True
-        intents.guilds = True
+        client_factory = getattr(discord, "Client", None)
+        if client_factory is None:
+            logger.error("Discord library does not expose Client; monitor disabled")
+            return
 
-        client = discord.Client(intents=intents)
+        client_kwargs: dict = {}
+        intents_factory = getattr(discord, "Intents", None)
+        if intents_factory is not None:
+            intents = intents_factory.default()
+            if hasattr(intents, "message_content"):
+                intents.message_content = True
+            if hasattr(intents, "messages"):
+                intents.messages = True
+            if hasattr(intents, "guilds"):
+                intents.guilds = True
+            client_kwargs["intents"] = intents
+        else:
+            logger.warning(
+                "Discord library has no Intents type; starting client without explicit intents"
+            )
+
+        try:
+            client = client_factory(**client_kwargs)
+        except TypeError:
+            # Compatibility fallback for discord client implementations
+            # that reject "intents" or differ in constructor signature.
+            client = client_factory()
 
         @client.event
         async def on_ready():  # type: ignore[no-redef]
