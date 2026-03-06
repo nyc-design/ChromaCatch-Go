@@ -46,8 +46,12 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionWebSocketDelegate 
         self.url = newURL
     }
 
+    func updateAPIKey(_ newKey: String) {
+        self.apiKey = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func updateClientId(_ newId: String) {
-        self.clientId = newId
+        self.clientId = newId.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func connect() {
@@ -55,8 +59,13 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionWebSocketDelegate 
         currentReconnectDelay = reconnectBaseDelay
 
         // Build URL with API key + client_id query params
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        var queryItems = components.queryItems ?? []
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            log("[\(label)] Invalid WebSocket URL: \(url.absoluteString)")
+            return
+        }
+        var queryItems = (components.queryItems ?? []).filter { item in
+            item.name != "api_key" && item.name != "client_id"
+        }
         if !apiKey.isEmpty {
             queryItems.append(URLQueryItem(name: "api_key", value: apiKey))
         }
@@ -65,7 +74,12 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionWebSocketDelegate 
         }
         components.queryItems = queryItems.isEmpty ? nil : queryItems
 
-        var request = URLRequest(url: components.url!)
+        guard let requestURL = components.url else {
+            log("[\(label)] Failed to build WebSocket request URL")
+            return
+        }
+
+        var request = URLRequest(url: requestURL)
         if !apiKey.isEmpty {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
@@ -73,7 +87,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionWebSocketDelegate 
         webSocketTask = session.webSocketTask(with: request)
         webSocketTask?.resume()
         receiveMessage()
-        log("[\(label)] Connecting to \(url.absoluteString)...")
+        log("[\(label)] Connecting to \(requestURL.absoluteString)...")
     }
 
     func disconnect() {

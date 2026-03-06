@@ -34,19 +34,31 @@ class AppCoordinator: ObservableObject {
 
     // Configuration (persisted)
     @Published var locationServiceURL: String {
-        didSet { UserDefaults.standard.set(locationServiceURL, forKey: "locationServiceURL") }
+        didSet {
+            UserDefaults.standard.set(locationServiceURL, forKey: "locationServiceURL")
+            if let normalized = Self.normalizeLocationWebSocketURL(locationServiceURL) {
+                locationWSManager.updateURL(normalized)
+            }
+        }
     }
     @Published var apiKey: String {
-        didSet { UserDefaults.standard.set(apiKey, forKey: "apiKey") }
+        didSet {
+            UserDefaults.standard.set(apiKey, forKey: "apiKey")
+            locationWSManager.updateAPIKey(apiKey)
+        }
     }
     @Published var clientId: String {
-        didSet { UserDefaults.standard.set(clientId, forKey: "clientId") }
+        didSet {
+            UserDefaults.standard.set(clientId, forKey: "clientId")
+            locationWSManager.updateClientId(clientId)
+        }
     }
 
     private var cancellables = Set<AnyCancellable>()
     let startTime = Date()
 
     private static let defaultLocationURL = "wss://8001--main--chromacatch-go-agents--nyc-design.apps.coder.tapiavala.com/ws/location"
+    private static let fallbackLocationURL = URL(string: "ws://localhost:8001/ws/location")!
 
     init() {
         if let old = UserDefaults.standard.string(forKey: "locationServiceURL"), old.contains("localhost") {
@@ -74,7 +86,7 @@ class AppCoordinator: ObservableObject {
         bleManager = BLEManager(log: logFn)
         dongleController = DongleController(bleManager: bleManager, log: logFn)
         locationWSManager = WebSocketManager(
-            url: URL(string: savedLocationURL) ?? URL(string: "wss://localhost:8001/ws/location")!,
+            url: Self.normalizeLocationWebSocketURL(savedLocationURL) ?? Self.fallbackLocationURL,
             apiKey: savedKey,
             clientId: savedClientId,
             label: "LOC",
@@ -142,6 +154,39 @@ class AppCoordinator: ObservableObject {
 
     // MARK: - Lifecycle
 
+    private static func normalizeLocationWebSocketURL(_ rawValue: String) -> URL? {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let candidate: String
+        if trimmed.contains("://") {
+            candidate = trimmed
+        } else {
+            candidate = "wss://\(trimmed)"
+        }
+
+        guard var components = URLComponents(string: candidate), components.host != nil else {
+            return nil
+        }
+
+        switch components.scheme?.lowercased() {
+        case "http":
+            components.scheme = "ws"
+        case "https":
+            components.scheme = "wss"
+        case "ws", "wss":
+            break
+        default:
+            return nil
+        }
+
+        if components.path.isEmpty || components.path == "/" {
+            components.path = "/ws/location"
+        }
+
+        return components.url
+    }
+
     func start() {
         startLocation()
     }
@@ -154,6 +199,15 @@ class AppCoordinator: ObservableObject {
 
     func startLocation() {
         guard !isLocationRunning else { return }
+        guard let normalizedURL = Self.normalizeLocationWebSocketURL(locationServiceURL) else {
+            addLog("Invalid location service URL: \(locationServiceURL)")
+            return
+        }
+
+        locationWSManager.updateURL(normalizedURL)
+        locationWSManager.updateAPIKey(apiKey)
+        locationWSManager.updateClientId(clientId)
+
         isLocationRunning = true
         addLog("Starting location connection...")
 
