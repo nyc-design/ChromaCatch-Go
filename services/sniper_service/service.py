@@ -230,6 +230,24 @@ class SniperService:
 
     # --------- Discord ingestion ---------
 
+    def _enabled_blocks_for_channel(self, server_id: str, channel_id: str) -> list[WatchBlock]:
+        return [
+            block
+            for block in self._watch_blocks
+            if block.enabled and block.server_id == server_id and block.channel_id == channel_id
+        ]
+
+    def _find_user_matching_block(
+        self,
+        server_id: str,
+        channel_id: str,
+        user_id: str,
+    ) -> WatchBlock | None:
+        for block in self._enabled_blocks_for_channel(server_id, channel_id):
+            if user_id in block.user_ids:
+                return block
+        return None
+
     async def _maybe_click_reveal_button(self, message: object) -> bool:
         message_id = str(getattr(message, "id", "") or "")
         if message_id and message_id in self._reveal_attempted_message_ids:
@@ -264,6 +282,61 @@ class SniperService:
 
         return False
 
+    async def _queue_if_matching(
+        self,
+        *,
+        server_id: str,
+        channel_id: str,
+        user_id: str,
+        flattened: str,
+        source: str,
+        source_message_id: str | None,
+        reference_time: object = None,
+    ) -> None:
+        matching_block = self._find_user_matching_block(server_id, channel_id, user_id)
+        if matching_block is None:
+            return
+
+        coords = extract_coordinate(flattened)
+        if coords is None:
+            return
+
+        lat, lon = coords
+        despawn_epoch = parse_despawn_epoch(
+            flattened,
+            reference_time=reference_time if reference_time is not None else None,
+        )
+
+        geofence = matching_block.geofence
+        if geofence is not None:
+            distance = haversine_km(lat, lon, geofence.latitude, geofence.longitude)
+            if distance > geofence.radius_km:
+                return
+
+        queued = self.enqueue_coordinate(
+            latitude=lat,
+            longitude=lon,
+            source=source,
+            despawn_epoch=despawn_epoch,
+            matched_block_id=matching_block.id,
+            matched_server_id=server_id,
+            matched_channel_id=channel_id,
+            matched_user_id=user_id,
+            source_message_id=source_message_id,
+        )
+
+        if queued is not None:
+            logger.info(
+                "Queued coordinate %.6f, %.6f from guild=%s channel=%s user=%s source=%s (queue=%d)",
+                lat,
+                lon,
+                server_id,
+                channel_id,
+                user_id,
+                source,
+                len(self._queue),
+            )
+
     async def handle_discord_message(self, message: object) -> None:
         """Parse/queue coords from a discord.py(-self) message object."""
         guild = getattr(message, "guild", None)
@@ -277,20 +350,8 @@ class SniperService:
         if not server_id or not channel_id or not user_id:
             return
 
-        matching_block: WatchBlock | None = None
-        for block in self._watch_blocks:
-            if not block.enabled:
-                continue
-            if block.server_id != server_id:
-                continue
-            if block.channel_id != channel_id:
-                continue
-            if user_id not in block.user_ids:
-                continue
-            matching_block = block
-            break
-
-        if matching_block is None:
+        channel_blocks = self._enabled_blocks_for_channel(server_id, channel_id)
+        if not channel_blocks:
             return
 
         content = str(getattr(message, "content", "") or "")
@@ -312,42 +373,45 @@ class SniperService:
             components.append(row_data)
 
         flattened = flatten_discord_message_parts(content, embeds, components)
-        coords = extract_coordinate(flattened)
-        if coords is None:
+        if extract_coordinate(flattened) is None:
             await self._maybe_click_reveal_button(message)
             return
 
-        lat, lon = coords
-        despawn_epoch = parse_despawn_epoch(
-            flattened,
+        await self._queue_if_matching(
+            server_id=server_id,
+            channel_id=channel_id,
+            user_id=user_id,
+            flattened=flattened,
+            source="discord",
+            source_message_id=str(getattr(message, "id", "")) or None,
             reference_time=getattr(message, "created_at", None),
         )
 
-        geofence = matching_block.geofence
-        if geofence is not None:
-            distance = haversine_km(lat, lon, geofence.latitude, geofence.longitude)
-            if distance > geofence.radius_km:
-                return
+    async def handle_discord_gateway_event(self, event_type: str, payload: dict) -> None:
+        if event_type not in {"MESSAGE_CREATE", "MESSAGE_UPDATE"}:
+            return
 
-        queued = self.enqueue_coordinate(
-            latitude=lat,
-            longitude=lon,
-            source="discord",
-            despawn_epoch=despawn_epoch,
-            matched_block_id=matching_block.id,
-            matched_server_id=server_id,
-            matched_channel_id=channel_id,
-            matched_user_id=user_id,
-            source_message_id=str(getattr(message, "id", "")) or None,
+        server_id = str(payload.get("guild_id") or "")
+        channel_id = str(payload.get("channel_id") or "")
+        user_id = str(((payload.get("author") or {}).get("id")) or "")
+
+        if not server_id or not channel_id or not user_id:
+            return
+
+        if not self._enabled_blocks_for_channel(server_id, channel_id):
+            return
+
+        flattened = flatten_discord_message_parts(
+            str(payload.get("content") or ""),
+            list(payload.get("embeds") or []),
+            list(payload.get("components") or []),
         )
 
-        if queued is not None:
-            logger.info(
-                "Queued coordinate %.6f, %.6f from guild=%s channel=%s user=%s (queue=%d)",
-                lat,
-                lon,
-                server_id,
-                channel_id,
-                user_id,
-                len(self._queue),
-            )
+        await self._queue_if_matching(
+            server_id=server_id,
+            channel_id=channel_id,
+            user_id=user_id,
+            flattened=flattened,
+            source=f"discord_gateway:{event_type.lower()}",
+            source_message_id=str(payload.get("id") or "") or None,
+        )

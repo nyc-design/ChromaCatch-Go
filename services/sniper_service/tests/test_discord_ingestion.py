@@ -95,3 +95,24 @@ async def test_message_edit_payload_with_coords_is_queued():
     assert state.size == 1
     assert state.items[0].latitude == 37.7749
     assert state.items[0].longitude == -122.4194
+
+
+@pytest.mark.asyncio
+async def test_gateway_message_update_with_coords_is_queued():
+    future_epoch = int((datetime.now(UTC) + timedelta(minutes=5)).timestamp())
+    payload = {
+        "id": "gw-msg-1",
+        "guild_id": "111",
+        "channel_id": "222",
+        "author": {"id": "333"},
+        "content": f"coords incoming <t:{future_epoch}:R>",
+        "embeds": [{"description": "40.712800, -74.006000"}],
+        "components": [],
+    }
+
+    await service.handle_discord_gateway_event("MESSAGE_UPDATE", payload)
+
+    state = service.queue_state()
+    assert state.size == 1
+    assert state.items[0].latitude == 40.7128
+    assert state.items[0].longitude == -74.006

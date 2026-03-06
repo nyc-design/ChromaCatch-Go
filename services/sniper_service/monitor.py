@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
 MessageHandler = Callable[[object], Awaitable[None]]
+GatewayEventHandler = Callable[[str, dict], Awaitable[None]]
 
 
 class DiscordMonitor:
@@ -18,9 +20,15 @@ class DiscordMonitor:
     local API-only runs can work without the dependency installed.
     """
 
-    def __init__(self, token: str, on_message: MessageHandler):
+    def __init__(
+        self,
+        token: str,
+        on_message: MessageHandler,
+        on_gateway_event: GatewayEventHandler | None = None,
+    ):
         self._token = token
         self._on_message = on_message
+        self._on_gateway_event = on_gateway_event
         self._client = None
         self._task: asyncio.Task | None = None
 
@@ -100,6 +108,30 @@ class DiscordMonitor:
             except Exception:
                 logger.exception("Failed handling Discord raw_message_edit event")
 
+        @client.event
+        async def on_socket_raw_receive(payload):  # type: ignore[no-redef]
+            if self._on_gateway_event is None:
+                return
+            if isinstance(payload, bytes):
+                payload = payload.decode("utf-8", errors="ignore")
+            if not isinstance(payload, str):
+                return
+            try:
+                event = json.loads(payload)
+            except Exception:
+                return
+
+            event_type = event.get("t")
+            event_data = event.get("d")
+            if event_type not in {"MESSAGE_CREATE", "MESSAGE_UPDATE"}:
+                return
+            if not isinstance(event_data, dict):
+                return
+            try:
+                await self._on_gateway_event(event_type, event_data)
+            except Exception:
+                logger.exception("Failed handling Discord %s gateway event", event_type)
+
         self._client = client
 
         try:
@@ -128,3 +160,57 @@ class DiscordMonitor:
 
         self._client = None
         self._task = None
+
+    async def backfill_recent_messages(
+        self,
+        channel_ids: list[str],
+        *,
+        limit: int = 25,
+        delay_seconds: float = 0.2,
+    ) -> int:
+        """Fetch recent channel messages and feed them through the normal message handler."""
+        if self._client is None:
+            return 0
+
+        is_ready = getattr(self._client, "is_ready", None)
+        if callable(is_ready) and not is_ready():
+            return 0
+
+        processed = 0
+        seen = set()
+        for channel_id in channel_ids:
+            if not channel_id or channel_id in seen:
+                continue
+            seen.add(channel_id)
+            try:
+                channel_id_int = int(channel_id)
+            except Exception:
+                continue
+
+            channel = None
+            try:
+                get_channel = getattr(self._client, "get_channel", None)
+                if callable(get_channel):
+                    channel = get_channel(channel_id_int)
+                if channel is None:
+                    fetch_channel = getattr(self._client, "fetch_channel", None)
+                    if callable(fetch_channel):
+                        channel = await fetch_channel(channel_id_int)
+            except Exception as exc:
+                logger.warning("Backfill: failed fetching channel=%s: %s", channel_id, exc)
+                continue
+
+            history = getattr(channel, "history", None)
+            if not callable(history):
+                continue
+
+            try:
+                async for message in history(limit=limit, oldest_first=True):
+                    await self._on_message(message)
+                    processed += 1
+                    if delay_seconds > 0:
+                        await asyncio.sleep(delay_seconds)
+            except Exception as exc:
+                logger.warning("Backfill: failed scanning channel=%s: %s", channel_id, exc)
+
+        return processed

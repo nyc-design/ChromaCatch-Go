@@ -6,6 +6,7 @@ configured watch blocks, and dispatches queued coordinates to the location backe
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import FastAPI, HTTPException
@@ -27,7 +28,11 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 service = SniperService(sniper_settings)
-monitor = DiscordMonitor(sniper_settings.discord_token, service.handle_discord_message)
+monitor = DiscordMonitor(
+    sniper_settings.discord_token,
+    service.handle_discord_message,
+    on_gateway_event=service.handle_discord_gateway_event,
+)
 
 app = FastAPI(
     title="ChromaCatch Sniper Service",
@@ -36,6 +41,15 @@ app = FastAPI(
     ),
     version="0.1.0",
 )
+
+
+def _schedule_backfill(channel_ids: list[str]) -> None:
+    async def _run() -> None:
+        processed = await monitor.backfill_recent_messages(channel_ids)
+        if processed:
+            logger.info("Backfill processed %d messages for %d channels", processed, len(channel_ids))
+
+    asyncio.create_task(_run())
 
 
 @app.on_event("startup")
@@ -69,12 +83,15 @@ async def get_watch_blocks() -> dict:
 @app.put("/watch-blocks")
 async def replace_watch_blocks(req: SetWatchBlocksRequest, client_id: str | None = None) -> dict:
     updated = service.replace_watch_blocks(req.watch_blocks, client_id=client_id)
+    _schedule_backfill([block.channel_id for block in updated])
     return {"watch_blocks": [block.model_dump() for block in updated]}
 
 
 @app.post("/watch-blocks", response_model=WatchBlock)
 async def add_watch_block(block: WatchBlock, client_id: str | None = None) -> WatchBlock:
-    return service.add_watch_block(block, client_id=client_id)
+    added = service.add_watch_block(block, client_id=client_id)
+    _schedule_backfill([added.channel_id])
+    return added
 
 
 @app.delete("/watch-blocks/{block_id}")
