@@ -28,6 +28,9 @@ class AppCoordinator: ObservableObject {
     @Published var sniperWatchBlocks: [SniperWatchBlock] = []
     @Published var sniperQueueState: SniperQueueState = .empty
     @Published var sniperLastActionMessage: String = ""
+    @Published var sniperKnownServerIDs: [String] = []
+    @Published var sniperKnownChannelIDs: [String] = []
+    @Published var sniperKnownUserIDs: [String] = []
 
     // GPS verification — mirrored from LocationMonitor for SwiftUI binding
     @Published var gpsAccurate: Bool = false
@@ -77,6 +80,10 @@ class AppCoordinator: ObservableObject {
     private static let fallbackLocationURL = URL(string: "ws://localhost:8001/ws/location")!
     private static let defaultSniperServiceURL = "https://8010--main--chromacatch-go-agents--nyc-design.apps.coder.tapiavala.com"
     private static let fallbackSniperServiceURL = URL(string: "http://localhost:8010")!
+    private static let sniperServerHistoryKey = "sniperServerHistoryIDs"
+    private static let sniperChannelHistoryKey = "sniperChannelHistoryIDs"
+    private static let sniperUserHistoryKey = "sniperUserHistoryIDs"
+    private static let sniperHistoryLimit = 30
 
     init() {
         if let old = UserDefaults.standard.string(forKey: "locationServiceURL"), old.contains("localhost") {
@@ -94,6 +101,9 @@ class AppCoordinator: ObservableObject {
         self.clientId = savedClientId
         self.sniperServiceURL = savedSniperURL
         self.dnsFilterEnabled = savedDNSFilter
+        self.sniperKnownServerIDs = UserDefaults.standard.stringArray(forKey: Self.sniperServerHistoryKey) ?? []
+        self.sniperKnownChannelIDs = UserDefaults.standard.stringArray(forKey: Self.sniperChannelHistoryKey) ?? []
+        self.sniperKnownUserIDs = UserDefaults.standard.stringArray(forKey: Self.sniperUserHistoryKey) ?? []
 
         var coordinator: AppCoordinator?
         let logFn: (String) -> Void = { message in
@@ -400,6 +410,7 @@ class AppCoordinator: ObservableObject {
             sniperMonitorConnected = health.discordMonitorConnected
             sniperWatchBlocks = blocks
             sniperQueueState = queue
+            absorbSniperIDHistory(from: blocks)
             sniperLastActionMessage = "Sniper service refreshed"
         } catch {
             sniperLastActionMessage = "Sniper refresh failed: \(error.localizedDescription)"
@@ -413,6 +424,7 @@ class AppCoordinator: ObservableObject {
             defer { sniperIsLoading = false }
             do {
                 _ = try await sniperAPIClient.addWatchBlock(watchBlock, clientId: clientId)
+                addSniperIDHistory(from: watchBlock)
                 sniperLastActionMessage = "Watch block added"
                 await refreshSniperDataAsync()
             } catch {
@@ -420,6 +432,50 @@ class AppCoordinator: ObservableObject {
                 addLog(sniperLastActionMessage)
             }
         }
+    }
+
+    // MARK: - Sniper ID History
+
+    private func normalizeSniperID(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func mergeHistory(existing: [String], incoming: [String]) -> [String] {
+        var output = existing
+        for raw in incoming {
+            guard let normalized = normalizeSniperID(raw) else { continue }
+            output.removeAll { $0 == normalized }
+            output.insert(normalized, at: 0)
+        }
+        if output.count > Self.sniperHistoryLimit {
+            output = Array(output.prefix(Self.sniperHistoryLimit))
+        }
+        return output
+    }
+
+    private func persistSniperIDHistory() {
+        UserDefaults.standard.set(sniperKnownServerIDs, forKey: Self.sniperServerHistoryKey)
+        UserDefaults.standard.set(sniperKnownChannelIDs, forKey: Self.sniperChannelHistoryKey)
+        UserDefaults.standard.set(sniperKnownUserIDs, forKey: Self.sniperUserHistoryKey)
+    }
+
+    private func addSniperIDHistory(from block: SniperWatchBlock) {
+        sniperKnownServerIDs = mergeHistory(existing: sniperKnownServerIDs, incoming: [block.serverId])
+        sniperKnownChannelIDs = mergeHistory(existing: sniperKnownChannelIDs, incoming: [block.channelId])
+        sniperKnownUserIDs = mergeHistory(existing: sniperKnownUserIDs, incoming: block.userIds)
+        persistSniperIDHistory()
+    }
+
+    private func absorbSniperIDHistory(from blocks: [SniperWatchBlock]) {
+        let serverIDs = blocks.map(\.serverId)
+        let channelIDs = blocks.map(\.channelId)
+        let userIDs = blocks.flatMap(\.userIds)
+
+        sniperKnownServerIDs = mergeHistory(existing: sniperKnownServerIDs, incoming: serverIDs)
+        sniperKnownChannelIDs = mergeHistory(existing: sniperKnownChannelIDs, incoming: channelIDs)
+        sniperKnownUserIDs = mergeHistory(existing: sniperKnownUserIDs, incoming: userIDs)
+        persistSniperIDHistory()
     }
 
     func deleteSniperWatchBlock(id: String) {

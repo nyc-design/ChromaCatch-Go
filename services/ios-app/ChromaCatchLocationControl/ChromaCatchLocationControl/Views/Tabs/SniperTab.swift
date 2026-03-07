@@ -124,7 +124,11 @@ struct SniperTab: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Sniper")
             .sheet(isPresented: $showAddWatchBlock) {
-                AddWatchBlockSheet { block in
+                AddWatchBlockSheet(
+                    knownServerIDs: coordinator.sniperKnownServerIDs,
+                    knownChannelIDs: coordinator.sniperKnownChannelIDs,
+                    knownUserIDs: coordinator.sniperKnownUserIDs
+                ) { block in
                     coordinator.addSniperWatchBlock(block)
                 }
             }
@@ -192,6 +196,36 @@ private struct QueueItemRow: View {
                     .foregroundColor(.secondary)
             }
 
+            Text("Queued: \(item.queuedAt.formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+
+            if let blockID = item.matchedBlockId {
+                Text("Block ID: \(blockID)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            if let serverID = item.matchedServerId {
+                Text("Server ID: \(serverID)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            if let channelID = item.matchedChannelId {
+                Text("Channel ID: \(channelID)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            if let userID = item.matchedUserId {
+                Text("User ID: \(userID)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            if let messageID = item.sourceMessageId {
+                Text("Message ID: \(messageID)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
             if let despawnEpoch = item.despawnEpoch {
                 let remaining = Int(despawnEpoch - Date().timeIntervalSince1970)
                 Text(remaining > 0 ? "Despawns in \(remaining)s" : "Expired")
@@ -218,6 +252,9 @@ private struct AddWatchBlockSheet: View {
     @State private var geofenceLon = ""
     @State private var geofenceRadius = ""
 
+    let knownServerIDs: [String]
+    let knownChannelIDs: [String]
+    let knownUserIDs: [String]
     let onSave: (SniperWatchBlock) -> Void
 
     private var parsedUserIds: [String] {
@@ -254,6 +291,32 @@ private struct AddWatchBlockSheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled(true)
                     Toggle("Enabled", isOn: $enabled)
+                }
+
+                if !knownServerIDs.isEmpty || !knownChannelIDs.isEmpty || !knownUserIDs.isEmpty {
+                    Section("Previously Used IDs") {
+                        if !knownServerIDs.isEmpty {
+                            IDSuggestionRow(
+                                title: "Server IDs",
+                                ids: knownServerIDs,
+                                onSelect: { serverId = $0 }
+                            )
+                        }
+                        if !knownChannelIDs.isEmpty {
+                            IDSuggestionRow(
+                                title: "Channel IDs",
+                                ids: knownChannelIDs,
+                                onSelect: { channelId = $0 }
+                            )
+                        }
+                        if !knownUserIDs.isEmpty {
+                            IDSuggestionRow(
+                                title: "User IDs",
+                                ids: knownUserIDs,
+                                onSelect: addUserIDSuggestion
+                            )
+                        }
+                    }
                 }
 
                 Section("Geofence (optional)") {
@@ -295,6 +358,46 @@ private struct AddWatchBlockSheet: View {
                         dismiss()
                     }
                     .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    private func addUserIDSuggestion(_ id: String) {
+        var ids = parsedUserIds
+        if !ids.contains(id) {
+            ids.append(id)
+        }
+        userIdsCSV = ids.joined(separator: ", ")
+    }
+}
+
+private struct IDSuggestionRow: View {
+    let title: String
+    let ids: [String]
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(ids, id: \.self) { id in
+                        Button {
+                            onSelect(id)
+                        } label: {
+                            Text(id)
+                                .font(.system(.caption2, design: .monospaced))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color(.tertiarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }
