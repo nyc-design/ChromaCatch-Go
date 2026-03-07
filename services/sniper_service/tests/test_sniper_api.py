@@ -120,6 +120,58 @@ def test_dispatch_next_uses_lifo_newest_first():
     assert data["location_request"] == captured_payload["json"]
 
 
+def test_dispatch_next_returns_sent_metadata():
+    client = TestClient(app)
+    service.enqueue_coordinate(
+        latitude=11.0,
+        longitude=22.0,
+        source="discord",
+        pokemon_name="Eevee",
+        level=30,
+        cp=1024,
+        iv_pct=98.0,
+        iv_atk=15,
+        iv_def=15,
+        iv_sta=14,
+    )
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"status":"sent"}'
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"status": "sent"}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    with patch("sniper_service.service.httpx.AsyncClient", FakeAsyncClient):
+        response = client.post("/queue/dispatch-next", json={})
+
+    assert response.status_code == 200
+    sent = response.json()["sent"]
+    assert sent["pokemon_name"] == "Eevee"
+    assert sent["level"] == 30
+    assert sent["cp"] == 1024
+    assert sent["iv_pct"] == 98.0
+    assert sent["iv_atk"] == 15
+    assert sent["iv_def"] == 15
+    assert sent["iv_sta"] == 14
+
+
 def test_watch_block_setup_sets_active_client_id_for_dispatch():
     client = TestClient(app)
 

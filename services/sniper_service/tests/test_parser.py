@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sniper_service.parser import extract_coordinate, parse_despawn_epoch
+from sniper_service.parser import extract_coordinate, parse_despawn_epoch, parse_spawn_metadata
 
 
 def test_extract_coordinate_from_text():
@@ -27,3 +27,21 @@ def test_parse_despawn_epoch_relative_time():
     now = datetime(2026, 3, 6, 22, 0, 0, tzinfo=UTC)
     epoch = parse_despawn_epoch("Despawns in 2m 30s", reference_time=now)
     assert epoch == now.timestamp() + 150
+
+
+def test_parse_despawn_epoch_parenthesized_timer():
+    now = datetime(2026, 3, 6, 22, 0, 0, tzinfo=UTC)
+    epoch = parse_despawn_epoch("Timer (05:02)", reference_time=now)
+    assert epoch == now.timestamp() + 302
+
+
+def test_parse_spawn_metadata_core_fields():
+    text = "Pikachu CP 1234 L35 IV 96% (15/14/14)"
+    meta = parse_spawn_metadata(text)
+    assert meta["pokemon_name"] == "Pikachu"
+    assert meta["cp"] == 1234
+    assert meta["level"] == 35
+    assert meta["iv_pct"] == 96.0
+    assert meta["iv_atk"] == 15
+    assert meta["iv_def"] == 14
+    assert meta["iv_sta"] == 14

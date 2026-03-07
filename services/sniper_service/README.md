@@ -7,6 +7,7 @@ Discord coordinate monitor + queue dispatcher for ChromaCatch.
 - Optionally enforce geofence per block
 - Discord ingest follows PoGo-style flow: listens to message create/edit updates and can auto-click `Reveal` buttons on matching messages
 - Queue coordinates from Discord messages
+- Queue items include parsed metadata when present: Pokémon name, level, CP, IV% / IV split, despawn
 - Queue uses LIFO dispatch semantics (newest coordinate sent first)
 - Queue prunes expired entries using parsed despawn timers from Discord message text
 - Dispatch next queued coordinate to location backend via `POST /location`
@@ -28,7 +29,7 @@ Discord coordinate monitor + queue dispatcher for ChromaCatch.
 - `PUT /watch-blocks` (replace all; optional `client_id` query param to set active dispatch client)
 - `POST /watch-blocks` (append one; optional `client_id` query param to set active dispatch client)
 - `DELETE /watch-blocks/{id}`
-- `GET /queue`
+- `GET /queue` (returns full queue item metadata)
 - `POST /queue/enqueue` (manual enqueue)
 - `POST /queue/clear`
-- `POST /queue/dispatch-next` (uses request `client_id`, else active client from watch-block setup, else env default)
+- `POST /queue/dispatch-next` (uses request `client_id`, else active client from watch-block setup, else env default; returns dispatched item metadata)

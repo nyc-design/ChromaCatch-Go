@@ -63,6 +63,13 @@ class CoordinateQueueItem(BaseModel):
     latitude: float
     longitude: float
     source: str = "discord"
+    pokemon_name: str | None = None
+    level: int | None = None
+    cp: int | None = None
+    iv_pct: float | None = None
+    iv_atk: int | None = None
+    iv_def: int | None = None
+    iv_sta: int | None = None
     matched_block_id: str | None = None
     matched_server_id: str | None = None
     matched_channel_id: str | None = None

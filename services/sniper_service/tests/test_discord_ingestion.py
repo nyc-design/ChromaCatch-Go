@@ -84,9 +84,9 @@ async def test_message_without_coords_clicks_reveal_button():
 async def test_message_edit_payload_with_coords_is_queued():
     future_epoch = int((datetime.now(UTC) + timedelta(minutes=5)).timestamp())
     message = FakeMessage(
-        message_id="msg-coords",
-        content=f"Despawn <t:{future_epoch}:R>",
-        embeds=[FakeEmbed("37.774900, -122.419400")],
+        message_id="msg-coords-meta",
+        content=f"Pikachu CP 1234 L35 IV 96% (15/14/14) Despawn <t:{future_epoch}:R>",
+        embeds=[FakeEmbed("37.774900, -122.419400 (05:00)")],
     )
 
     await service.handle_discord_message(message)
@@ -95,3 +95,10 @@ async def test_message_edit_payload_with_coords_is_queued():
     assert state.size == 1
     assert state.items[0].latitude == 37.7749
     assert state.items[0].longitude == -122.4194
+    assert state.items[0].pokemon_name == "Pikachu"
+    assert state.items[0].cp == 1234
+    assert state.items[0].level == 35
+    assert state.items[0].iv_pct == 96.0
+    assert state.items[0].iv_atk == 15
+    assert state.items[0].iv_def == 14
+    assert state.items[0].iv_sta == 14

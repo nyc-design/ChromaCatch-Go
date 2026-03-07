@@ -60,6 +60,13 @@ struct SniperQueueItem: Codable, Identifiable {
     let latitude: Double
     let longitude: Double
     let source: String
+    let pokemonName: String?
+    let level: Int?
+    let cp: Int?
+    let ivPct: Double?
+    let ivAtk: Int?
+    let ivDef: Int?
+    let ivSta: Int?
     let matchedBlockId: String?
     let matchedServerId: String?
     let matchedChannelId: String?

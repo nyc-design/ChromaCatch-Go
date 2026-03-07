@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import time
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -23,6 +24,7 @@ from sniper_service.parser import (
     extract_coordinate,
     flatten_discord_message_parts,
     parse_despawn_epoch,
+    parse_spawn_metadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -140,6 +142,13 @@ class SniperService:
         latitude: float,
         longitude: float,
         source: str,
+        pokemon_name: str | None = None,
+        level: int | None = None,
+        cp: int | None = None,
+        iv_pct: float | None = None,
+        iv_atk: int | None = None,
+        iv_def: int | None = None,
+        iv_sta: int | None = None,
         despawn_epoch: float | None = None,
         matched_block_id: str | None = None,
         matched_server_id: str | None = None,
@@ -157,6 +166,13 @@ class SniperService:
             latitude=latitude,
             longitude=longitude,
             source=source,
+            pokemon_name=pokemon_name,
+            level=level,
+            cp=cp,
+            iv_pct=iv_pct,
+            iv_atk=iv_atk,
+            iv_def=iv_def,
+            iv_sta=iv_sta,
             matched_block_id=matched_block_id,
             matched_server_id=matched_server_id,
             matched_channel_id=matched_channel_id,
@@ -302,9 +318,11 @@ class SniperService:
             return
 
         lat, lon = coords
+        metadata = parse_spawn_metadata(flattened)
+        parsed_reference_time = reference_time if isinstance(reference_time, datetime) else None
         despawn_epoch = parse_despawn_epoch(
             flattened,
-            reference_time=reference_time if reference_time is not None else None,
+            reference_time=parsed_reference_time,
         )
 
         geofence = matching_block.geofence
@@ -317,6 +335,13 @@ class SniperService:
             latitude=lat,
             longitude=lon,
             source=source,
+            pokemon_name=metadata["pokemon_name"],
+            level=metadata["level"],
+            cp=metadata["cp"],
+            iv_pct=metadata["iv_pct"],
+            iv_atk=metadata["iv_atk"],
+            iv_def=metadata["iv_def"],
+            iv_sta=metadata["iv_sta"],
             despawn_epoch=despawn_epoch,
             matched_block_id=matching_block.id,
             matched_server_id=server_id,

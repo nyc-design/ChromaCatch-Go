@@ -200,6 +200,31 @@ private struct QueueItemRow: View {
                 .font(.caption2)
                 .foregroundColor(.secondary)
 
+            if item.pokemonName != nil || item.level != nil || item.cp != nil || item.ivPct != nil {
+                HStack(spacing: 8) {
+                    if let name = item.pokemonName {
+                        Text(name)
+                    }
+                    if let level = item.level {
+                        Text("L\(level)")
+                    }
+                    if let cp = item.cp {
+                        Text("CP \(cp)")
+                    }
+                    if let ivPct = item.ivPct {
+                        Text(String(format: "IV %.1f%%", ivPct))
+                    }
+                }
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+
+            if let ivAtk = item.ivAtk, let ivDef = item.ivDef, let ivSta = item.ivSta {
+                Text("IV split: \(ivAtk)/\(ivDef)/\(ivSta)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
             if let blockID = item.matchedBlockId {
                 Text("Block ID: \(blockID)")
                     .font(.caption2)

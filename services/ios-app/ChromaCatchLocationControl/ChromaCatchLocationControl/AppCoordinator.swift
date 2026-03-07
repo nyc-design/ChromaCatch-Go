@@ -501,11 +501,15 @@ class AppCoordinator: ObservableObject {
                 let response = try await sniperAPIClient.dispatchNext()
                 sniperQueueState = response.queue
                 if let sent = response.sent {
-                    sniperLastActionMessage = String(
-                        format: "Dispatched newest: %.6f, %.6f",
-                        sent.latitude,
-                        sent.longitude
-                    )
+                    var parts: [String] = []
+                    if let name = sent.pokemonName { parts.append(name) }
+                    if let level = sent.level { parts.append("L\(level)") }
+                    if let cp = sent.cp { parts.append("CP \(cp)") }
+                    if let ivPct = sent.ivPct { parts.append(String(format: "IV %.1f%%", ivPct)) }
+
+                    let prefix = parts.isEmpty ? "Dispatched newest" : "Dispatched \(parts.joined(separator: " • "))"
+                    let coordsText = String(format: "%.6f, %.6f", sent.latitude, sent.longitude)
+                    sniperLastActionMessage = "\(prefix): \(coordsText)"
                 } else {
                     sniperLastActionMessage = response.message ?? "Dispatch completed"
                 }
