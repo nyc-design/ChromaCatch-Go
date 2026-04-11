@@ -33,7 +33,7 @@ services:
     environment:
       - CC_SNIPER_DISCORD_TOKEN=${CC_SNIPER_DISCORD_TOKEN:-}
       - CC_SNIPER_LOCATION_POST_URL=${CC_SNIPER_LOCATION_POST_URL:-http://location-backend:8001/location}
-      - CC_SNIPER_LOCATION_CLIENT_ID=${CC_SNIPER_LOCATION_CLIENT_ID:-ios-app}
+      - CC_SNIPER_LOCATION_CLIENT_ID=${CC_SNIPER_LOCATION_CLIENT_ID:-ios-location-spoofer}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')"]
       interval: 15s
